@@ -1,0 +1,29 @@
+# Python / env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.env
+
+# SQLite & logs
+misc/db.sqlite
+log.log
+
+# Node / Vite (dashboard)
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+dashboard/.cache/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+
+# Runtime data exports
+dashboard/src/data/runtimeData.json

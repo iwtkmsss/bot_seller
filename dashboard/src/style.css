@@ -65,6 +65,13 @@ h2 {
   gap: 8px;
 }
 
+.tabbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .btn {
   border: 1px solid #2c3549;
   background: #0f1322;
@@ -185,6 +192,105 @@ h2 {
   gap: 16px;
 }
 
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.control-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.input {
+  background: #0f1322;
+  border: 1px solid #2c3549;
+  border-radius: 10px;
+  color: #d7e0f5;
+  padding: 9px 12px;
+  min-width: 160px;
+}
+
+.input:focus {
+  outline: 1px solid #7c8fff;
+  border-color: #7c8fff;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  justify-content: center;
+}
+
+.auth-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  max-width: 360px;
+  width: 100%;
+  background: rgba(13, 15, 24, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.error {
+  color: #ff9da8;
+  font-size: 14px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.channel-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.channel-title {
+  font-weight: 600;
+}
+
+.channel-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: #8ad3ff;
+}
+
 .panel-block {
   background: rgba(255, 255, 255, 0.01);
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -260,7 +366,7 @@ h2 {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 1.2fr 1.1fr 0.8fr 0.8fr;
+  grid-template-columns: 1.2fr 1.1fr 0.9fr 1fr;
   gap: 12px;
   align-items: center;
   font-size: 14px;
@@ -286,6 +392,9 @@ h2 {
 @media (max-width: 800px) {
   .topbar {
     flex-direction: column;
+  }
+  .tabbar {
+    justify-content: flex-start;
   }
   .grid {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

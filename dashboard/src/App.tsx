@@ -1,22 +1,59 @@
-import { useMemo, useState } from 'react'
-import { channels as mockChannels, payments as mockPayments, users as mockUsers, type MockChannel, type MockPayment, type MockUser } from './data/mockData'
+import type { FormEvent } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
+import {
+  channels as mockChannels,
+  payments as mockPayments,
+  users as mockUsers,
+  type MockChannel,
+  type MockPayment,
+  type MockUser,
+} from './data/mockData'
 import runtimeData from './data/runtimeData.json'
 
 type UserStatus = 'active' | 'expiring' | 'expired'
-
-const statusChip: Record<UserStatus, string> = {
-  active: 'Активна',
-  expiring: 'Скоро закінчиться',
-  expired: 'Неактивна',
+type TabId = 'overview' | 'stats'
+type SortOrder = 'asc' | 'desc'
+type SearchKey = 'userName' | 'telegramId' | 'plan'
+type AuthState = {
+  authed: boolean
+  attemptsLeft: number
+  lockedUntil: number
 }
 
+const statusChip: Record<UserStatus, string> = {
+  active: 'Активен',
+  expiring: 'Скоро истекает',
+  expired: 'Просрочен',
+}
+
+const ADMIN_ROLES = (import.meta.env.VITE_ADMIN_ROLES ?? 'admin')
+  .split(',')
+  .map((v: string) => v.trim())
+  .filter(Boolean)
+const PAGE_SIZE = Math.max(1, Number.parseInt(import.meta.env.VITE_PAGE_SIZE ?? '5', 10) || 5)
+const AUTH_USER = import.meta.env.VITE_AUTH_USER ?? 'admin'
+const AUTH_PASS = import.meta.env.VITE_AUTH_PASS ?? '1234'
+const MAX_ATTEMPTS = Math.max(1, Number.parseInt(import.meta.env.VITE_MAX_ATTEMPTS ?? '5', 10) || 5)
+const LOCK_MS = Math.max(1000, Number.parseInt(import.meta.env.VITE_LOCK_MS ?? '30000', 10) || 30000)
+
 function formatDate(value?: string) {
-  if (!value) return '—'
-  return new Date(value).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  if (!value) return '-'
+  const date = new Date(value)
+  return date.toLocaleString('ru-RU', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+    timeZoneName: 'short',
+    hour12: false,
+  })
 }
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
+  return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
 }
 
 function SummaryCard({ title, value, sub }: { title: string; value: string; sub?: string }) {
@@ -25,23 +62,6 @@ function SummaryCard({ title, value, sub }: { title: string; value: string; sub?
       <div className="card-title">{title}</div>
       <div className="card-value">{value}</div>
       {sub && <div className="card-sub">{sub}</div>}
-    </div>
-  )
-}
-
-function ProgressBar({ label, value, total }: { label: string; value: number; total: number }) {
-  const pct = total === 0 ? 0 : Math.round((value / total) * 100)
-  return (
-    <div className="bar-row">
-      <div className="bar-label">
-        <span>{label}</span>
-        <span className="muted">{value} корист.</span>
-      </div>
-      <div className="bar-track">
-        <div className="bar-fill" style={{ width: `${pct}%` }}>
-          <span>{pct}%</span>
-        </div>
-      </div>
     </div>
   )
 }
@@ -65,26 +85,45 @@ function PaymentRow({
     status === 'paid'
       ? 'Оплачено'
       : status === 'pending'
-        ? 'Очікує'
+        ? 'В ожидании'
         : status === 'timeout'
-          ? 'Не знайдено'
-          : 'Скасовано'
+          ? 'Таймаут'
+          : 'Отклонено'
   return (
     <div className="timeline-item">
       <div>
         <div className="timeline-title">
-          {userName} — {plan || 'Без плану'}
+          {userName} • {plan || 'Без плана'}
         </div>
         <div className="timeline-meta">
           <span className="pill">{label}</span>
           <span className="muted">{method}</span>
-          <span className="muted">{paidAt ? new Date(paidAt).toLocaleString('uk-UA') : '—'}</span>
+          <span className="muted">{paidAt ? formatDate(paidAt) : '—'}</span>
         </div>
       </div>
       <div className="timeline-amount">{formatMoney(amount)}</div>
     </div>
   )
 }
+
+const UserRow = memo(function UserRow({ user }: { user: MockUser }) {
+  return (
+    <div className="table-row">
+      <div>
+        <div className="strong">@{user.userName || 'no_username'}</div>
+        <div className="muted">{user.telegramId}</div>
+      </div>
+      <div>
+        <div>{user.plan.join(', ')}</div>
+        <div className="muted">{user.jobTitle}</div>
+      </div>
+      <div>
+        <span className={`pill pill-${user.status}`}>{statusChip[user.status]}</span>
+      </div>
+      <div>{formatDate(user.subscriptionEnd)}</div>
+    </div>
+  )
+})
 
 type DataShape = {
   users: MockUser[]
@@ -104,126 +143,346 @@ const dataSource: DataShape = hasRuntime
 
 export default function App() {
   const [filter, setFilter] = useState<UserStatus | 'all'>('all')
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [page, setPage] = useState(1)
+  const [searchKey, setSearchKey] = useState<SearchKey>('userName')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [auth, setAuth] = useState<AuthState>(() => {
+    try {
+      const raw = localStorage.getItem('dashboard_auth')
+      if (!raw) return { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
+      const parsed = JSON.parse(raw) as Partial<AuthState>
+      return {
+        authed: !!parsed.authed,
+        attemptsLeft: parsed.attemptsLeft ?? MAX_ATTEMPTS,
+        lockedUntil: parsed.lockedUntil ?? 0,
+      }
+    } catch {
+      return { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
+    }
+  })
+  const [loginInput, setLoginInput] = useState('')
+  const [passInput, setPassInput] = useState('')
+  const [authError, setAuthError] = useState<string | null>(null)
 
-  const filteredUsers = useMemo(() => {
-    if (filter === 'all') return dataSource.users
-    return dataSource.users.filter((u) => u.status === filter)
-  }, [filter])
+  const visiblePool = useMemo(
+    () => dataSource.users.filter((u) => !ADMIN_ROLES.includes((u.jobTitle || '').toLowerCase())),
+    [],
+  )
 
-  const totals = useMemo(() => {
-    const active = dataSource.users.filter((u) => u.status === 'active').length
-    const expiring = dataSource.users.filter((u) => u.status === 'expiring').length
-    const expired = dataSource.users.filter((u) => u.status === 'expired').length
-    const mrr = dataSource.users
-      .filter((u) => u.status !== 'expired')
-      .reduce((acc, u) => acc + (u.planPrice ?? 0), 0)
-    const revenue30d = dataSource.payments
+  useEffect(() => {
+    setPage(1)
+  }, [filter, sortOrder, searchKey, searchTerm])
+
+  const visibleUsers = useMemo(() => {
+    const base = filter === 'all' ? visiblePool : visiblePool.filter((u) => u.status === filter)
+    const q = searchTerm.trim().toLowerCase()
+    const filteredByQuery =
+      q.length === 0
+        ? base
+        : base.filter((u) => {
+            if (searchKey === 'telegramId') return `${u.telegramId}`.startsWith(q)
+            if (searchKey === 'plan') return u.plan.some((p) => p.toLowerCase().startsWith(q))
+            return (u.userName || '').toLowerCase().startsWith(q)
+          })
+    const parseDate = (val?: string) => (val ? Date.parse(val.replace(' ', 'T')) : 0)
+    return [...filteredByQuery].sort((a, b) => {
+      const aDate = parseDate(a.subscriptionEnd)
+      const bDate = parseDate(b.subscriptionEnd)
+      const aValue = aDate || a.planPrice || 0
+      const bValue = bDate || b.planPrice || 0
+      const diff = bValue - aValue
+      return sortOrder === 'desc' ? diff : -diff
+    })
+  }, [filter, sortOrder, visiblePool, searchKey, searchTerm])
+
+const totals = useMemo(() => {
+  const active = visiblePool.filter((u) => u.status === 'active').length
+  const expiring = visiblePool.filter((u) => u.status === 'expiring').length
+  const expired = visiblePool.filter((u) => u.status === 'expired').length
+  const revenue30d = dataSource.payments
       .filter((p) => p.status === 'paid')
       .reduce((acc, p) => acc + p.amount, 0)
-    return { active, expiring, expired, mrr, revenue30d }
-  }, [])
+    return { active, expiring, expired, revenue30d }
+}, [visiblePool])
 
-  const totalUsers = dataSource.users.length
+const totalPages = Math.max(1, Math.ceil(visibleUsers.length / PAGE_SIZE))
+const paginatedUsers = useMemo(() => {
+  const start = (page - 1) * PAGE_SIZE
+  return visibleUsers.slice(start, start + PAGE_SIZE)
+}, [page, visibleUsers])
+
+useEffect(() => {
+  setPage((p) => Math.min(p, totalPages))
+}, [totalPages])
+
+const channelStats = useMemo(
+  () =>
+    dataSource.channels.map((ch) => ({
+      name: ch.name,
+      members: ch.members ?? 0,
+    })),
+  [dataSource.channels],
+)
+
+const locked = auth.lockedUntil > Date.now()
+
+const handleLogin = (e: FormEvent) => {
+  e.preventDefault()
+  if (locked) {
+    setAuthError(`Подождите ${Math.ceil((auth.lockedUntil - Date.now()) / 1000)} сек.`)
+    return
+  }
+  if (loginInput === AUTH_USER && passInput === AUTH_PASS) {
+    const next = { authed: true, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
+    setAuth(next)
+    localStorage.setItem('dashboard_auth', JSON.stringify(next))
+    setAuthError(null)
+    return
+  }
+  const nextAttempts = auth.attemptsLeft - 1
+  if (nextAttempts <= 0) {
+    const next: AuthState = { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: Date.now() + LOCK_MS }
+    setAuth(next)
+    localStorage.setItem('dashboard_auth', JSON.stringify(next))
+    setAuthError(`Блокировка на ${LOCK_MS / 1000} сек.`)
+  } else {
+    const next: AuthState = { authed: false, attemptsLeft: nextAttempts, lockedUntil: 0 }
+    setAuth(next)
+    localStorage.setItem('dashboard_auth', JSON.stringify(next))
+    setAuthError(`Неверно. Осталось попыток: ${nextAttempts}`)
+  }
+}
+
+const handleLogout = () => {
+  const next = { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
+  setAuth(next)
+  localStorage.setItem('dashboard_auth', JSON.stringify(next))
+  setLoginInput('')
+  setPassInput('')
+}
+
+const pageButtons = useMemo(() => {
+  const targets = [1, page - 10, page - 5, page, page + 5, page + 10, totalPages]
+  return Array.from(
+    new Map(
+      targets
+          .filter((p) => p >= 1 && p <= totalPages)
+          .sort((a, b) => a - b)
+          .map((p) => [p, p]),
+      ).values(),
+    )
+  }, [page, totalPages])
+
+  if (!auth.authed) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h2>Вход</h2>
+          <form className="auth-form" onSubmit={handleLogin}>
+            <input
+              className="input"
+              placeholder="Логин"
+              value={loginInput}
+              onChange={(e) => setLoginInput(e.target.value)}
+              autoComplete="username"
+            />
+            <input
+              className="input"
+              type="password"
+              placeholder="Пароль"
+              value={passInput}
+              onChange={(e) => setPassInput(e.target.value)}
+              autoComplete="current-password"
+            />
+            <button className="btn active" type="submit" disabled={locked}>
+              Войти
+            </button>
+          </form>
+          {authError && <p className="error">{authError}</p>}
+          {locked && <p className="muted">Разблокировка через {Math.ceil((auth.lockedUntil - Date.now()) / 1000)} сек.</p>}
+        </div>
+      </div>
+    )
+  }
+
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'overview', label: 'Обзор' },
+    { id: 'stats', label: 'Статистика' },
+  ]
 
   return (
     <div className="page">
       <header className="topbar">
         <div>
           <p className="eyebrow">REFUNDER TEAM</p>
-          <h1>Аналітика доступів та оплат</h1>
-          <p className="muted">Мок-дані з поточної SQLite. API підключимо окремо.</p>
+          <h1>Панель подписок и оплат</h1>
         </div>
-        <div className="filter">
-          {['all', 'active', 'expiring', 'expired'].map((key) => (
+        <div className="tabbar">
+          {tabs.map((tab) => (
             <button
-              key={key}
-              className={filter === key ? 'btn active' : 'btn ghost'}
-              onClick={() => setFilter(key as UserStatus | 'all')}
+              key={tab.id}
+              className={activeTab === tab.id ? 'btn active' : 'btn ghost'}
+              onClick={() => setActiveTab(tab.id)}
             >
-              {key === 'all' ? 'Всі' : statusChip[key as UserStatus]}
+              {tab.label}
             </button>
           ))}
+          <button className="btn ghost" onClick={handleLogout}>
+            Выйти
+          </button>
         </div>
       </header>
 
-      <section className="grid">
-        <SummaryCard title="Активні зараз" value={`${totals.active}`} sub="користувачів" />
-        <SummaryCard title="Закінчуються ≤7 днів" value={`${totals.expiring}`} />
-        <SummaryCard title="Вимкнено" value={`${totals.expired}`} />
-        <SummaryCard title="Очікуваний MRR" value={formatMoney(totals.mrr)} sub="без урахування скидок" />
-        <SummaryCard title="Оплати за 30 днів" value={formatMoney(totals.revenue30d)} />
-      </section>
+      {activeTab === 'overview' && (
+        <>
+          <section className="grid">
+            <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="на текущий момент" />
+            <SummaryCard title="Заканчиваются скоро" value={`${totals.expiring}`} />
+            <SummaryCard title="Просрочены" value={`${totals.expired}`} />
+            <SummaryCard title="Оплачено за 30 дней" value={formatMoney(totals.revenue30d)} />
+          </section>
 
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <h2>Розподіл по каналах</h2>
-            <p className="muted">Маємо {dataSource.channels.length} каналів, сумарно {totalUsers} користувачів</p>
-          </div>
-        </div>
-        <div className="bars">
-          {dataSource.channels.map((ch) => (
-            <ProgressBar key={ch.name} label={ch.name} value={ch.members} total={totalUsers} />
-          ))}
-        </div>
-      </section>
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <h2>Каналы и аудитория</h2>
+              </div>
+            </div>
+            <div className="channel-grid">
+              {channelStats.map((ch) => (
+                <div key={ch.name} className="card channel-card">
+                  <div className="channel-title">{ch.name}</div>
+                  <div className="channel-count">{ch.members}</div>
+                  <div className="channel-meta muted">участников</div>
+                </div>
+              ))}
+            </div>
+          </section>
 
-      <section className="panel two-columns">
-        <div className="panel-block">
+          <section className="panel">
+            <div className="panel-head">
+              <div>
+                <h2>История оплат</h2>
+                <p className="muted">CryptoBot • USDT TRC-20</p>
+              </div>
+            </div>
+            <div className="timeline">
+              {dataSource.payments.map((p) => (
+                <PaymentRow
+                  key={p.id}
+                  amount={p.amount}
+                  status={p.status}
+                  paidAt={p.paidAt}
+                  plan={p.plan}
+                  method={p.method}
+                  userName={p.userName}
+                />
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+
+      {activeTab === 'stats' && (
+        <section className="panel">
           <div className="panel-head">
             <div>
-              <h2>Останні оплати</h2>
-              <p className="muted">CryptoBot та USDT TRC-20</p>
+              <h2>Пользователи</h2>
             </div>
           </div>
-          <div className="timeline">
-            {dataSource.payments.map((p) => (
-              <PaymentRow
-                key={p.id}
-                amount={p.amount}
-                status={p.status}
-                paidAt={p.paidAt}
-                plan={p.plan}
-                method={p.method}
-                userName={p.userName}
+
+          <div className="controls">
+            <div className="control-group">
+              <span className="muted">Фильтр статуса:</span>
+              <div className="control-buttons">
+                {['all', 'active', 'expiring', 'expired'].map((key) => (
+                  <button
+                    key={key}
+                    className={filter === key ? 'btn active' : 'btn ghost'}
+                    onClick={() => setFilter(key as UserStatus | 'all')}
+                  >
+                    {key === 'all' ? 'Все' : statusChip[key as UserStatus]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="control-group">
+              <span className="muted">Сортировка:</span>
+              <div className="control-buttons">
+                <button
+                  className={sortOrder === 'desc' ? 'btn active' : 'btn ghost'}
+                  onClick={() => setSortOrder('desc')}
+                >
+                  По убыванию
+                </button>
+                <button
+                  className={sortOrder === 'asc' ? 'btn active' : 'btn ghost'}
+                  onClick={() => setSortOrder('asc')}
+                >
+                  По возрастанию
+                </button>
+              </div>
+            </div>
+
+            <div className="control-group">
+              <span className="muted">Поиск:</span>
+              <select className="input" value={searchKey} onChange={(e) => setSearchKey(e.target.value as SearchKey)}>
+                <option value="userName">Username</option>
+                <option value="telegramId">Telegram ID</option>
+                <option value="plan">План</option>
+              </select>
+              <input
+                className="input"
+                type="text"
+                placeholder="Начните вводить..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
-            ))}
-          </div>
-        </div>
-
-        <div className="panel-block">
-          <div className="panel-head">
-            <div>
-              <h2>Користувачі</h2>
-              <p className="muted">Фільтр: {filter === 'all' ? 'всі' : statusChip[filter]}</p>
             </div>
           </div>
+
+          <div className="pagination">
+            <button
+              className="btn ghost"
+              disabled={page === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Назад
+            </button>
+            {pageButtons.map((pNum) => (
+              <button
+                key={pNum}
+                className={page === pNum ? 'btn active' : 'btn ghost'}
+                onClick={() => setPage(pNum)}
+              >
+                {pNum}
+              </button>
+            ))}
+            <button
+              className="btn ghost"
+              disabled={page === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Вперед
+            </button>
+          </div>
+
           <div className="table">
             <div className="table-head">
               <span>ID</span>
-              <span>План</span>
+              <span>Планы</span>
               <span>Статус</span>
-              <span>До</span>
+              <span>Окончание</span>
             </div>
-            {filteredUsers.map((u) => (
-              <div className="table-row" key={u.telegramId}>
-                <div>
-                  <div className="strong">@{u.userName || 'no_username'}</div>
-                  <div className="muted">{u.telegramId}</div>
-                </div>
-                <div>
-                  <div>{u.plan.join(', ')}</div>
-                  <div className="muted">{u.jobTitle}</div>
-                </div>
-                <div>
-                  <span className={`pill pill-${u.status}`}>{statusChip[u.status]}</span>
-                </div>
-                <div>{formatDate(u.subscriptionEnd)}</div>
-              </div>
+            {paginatedUsers.map((u) => (
+              <UserRow key={u.telegramId} user={u} />
             ))}
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   )
 }

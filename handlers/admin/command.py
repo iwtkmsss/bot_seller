@@ -215,6 +215,7 @@ async def cmd_add_time(message: Message):
     if not user:
         await message.answer("❌ Користувача не знайдено.")
         return
+    old_subscription_end = user.get("subscription_end")
 
     until_dt = _parse_until(until_raw)
     if not until_dt:

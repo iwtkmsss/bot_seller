@@ -54,7 +54,8 @@ export async function exportDb({ silent = false } = {}) {
       subscriptionEnd: end,
       status,
       jobTitle: u.job_title,
-      planPrice: Array.isArray(plans) ? plans.length * 50 : 0,
+      notifiedMark: u.notifed_mark,
+      planPrice: 50,
     }
   })
 
@@ -70,9 +71,11 @@ export async function exportDb({ silent = false } = {}) {
   }))
 
   const channelRow = execRows("SELECT value FROM settings WHERE key='channel'")[0]
-  const channels = parseJson(channelRow?.value, []).map((ch) => ({
+  const channelList = parseJson(channelRow?.value, [])
+  const eligibleUsers = users.filter((u) => (u.notifiedMark ?? '').toLowerCase() !== 'expierd')
+  const channels = channelList.map((ch) => ({
     name: ch.name,
-    members: 0,
+    members: eligibleUsers.filter((u) => Array.isArray(u.plan) && u.plan.includes(ch.name)).length,
   }))
 
   const payload = { users, payments, channels }

@@ -44,13 +44,25 @@ class Database:
             """
         )
         existing_cols = {row["name"] for row in self.cursor.execute("PRAGMA table_info(payments)")}
+        # ensure newly added columns exist even on old databases
         for col, ddl in [
+            ("tx_hash", "ALTER TABLE payments ADD COLUMN tx_hash TEXT"),
+            ("tx_from", "ALTER TABLE payments ADD COLUMN tx_from TEXT"),
+            ("tx_to", "ALTER TABLE payments ADD COLUMN tx_to TEXT"),
+            ("tx_value", "ALTER TABLE payments ADD COLUMN tx_value REAL"),
+            ("tx_timestamp", "ALTER TABLE payments ADD COLUMN tx_timestamp DATETIME"),
             ("user_name", "ALTER TABLE payments ADD COLUMN user_name TEXT"),
             ("first_name", "ALTER TABLE payments ADD COLUMN first_name TEXT"),
             ("admin_id", "ALTER TABLE payments ADD COLUMN admin_id INTEGER"),
             ("admin_name", "ALTER TABLE payments ADD COLUMN admin_name TEXT"),
             ("old_subscription_end", "ALTER TABLE payments ADD COLUMN old_subscription_end DATETIME"),
             ("new_subscription_end", "ALTER TABLE payments ADD COLUMN new_subscription_end DATETIME"),
+            ("payload", "ALTER TABLE payments ADD COLUMN payload TEXT"),
+            ("description", "ALTER TABLE payments ADD COLUMN description TEXT"),
+            ("raw_response", "ALTER TABLE payments ADD COLUMN raw_response TEXT"),
+            ("paid_at", "ALTER TABLE payments ADD COLUMN paid_at DATETIME"),
+            ("created_at", "ALTER TABLE payments ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "ALTER TABLE payments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP"),
         ]:
             if col not in existing_cols:
                 self.cursor.execute(ddl)

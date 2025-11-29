@@ -32,5 +32,5 @@ async def cmd_start(message: Message, bot: Bot):
     elif user["access_granted"] == 1:
         sub_end = parse_subscription_end(user.get("subscription_end"))
         end_text = sub_end.strftime("%d.%m.%Y") if sub_end else (user.get("subscription_end") or "unknown")
-        await message.answer(text=f"???? ???????? ??????? ??: <b>{end_text}</b>", reply_markup=start_buttons_kb)
+        await message.answer(text=f"Твоя підписка активна до: <b>{end_text}</b>", reply_markup=start_buttons_kb)
 

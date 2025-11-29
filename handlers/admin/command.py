@@ -8,7 +8,7 @@ from aiogram.types import Message, ChatMemberAdministrator, ChatMemberOwner
 from aiogram.filters import Command, CommandObject
 
 from filter import UserAdmin
-from misc import BDB, get_text
+from misc import BDB, get_text, normalize_subscription_end
 
 router = Router()
 
@@ -227,12 +227,12 @@ async def cmd_add_time(message: Message):
         await message.answer("❌ Дата закінчення повинна бути в майбутньому.")
         return
 
-    # Зберігаємо в ISO (без таймзони). Якщо потрібно — можна додати tzinfo/UTC.
-    until_dt = until_dt.replace(microsecond=0)
+    # Зберігаємо в ISO (без таймзони) з мікросекундами для єдності формату.
+    normalized_end = normalize_subscription_end(until_dt)
     BDB.update_user_field(
         telegram_id,
         "subscription_end",
-        until_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+        normalized_end
     )
 
     # Лог зміни часу від адміна
@@ -249,7 +249,7 @@ async def cmd_add_time(message: Message):
             admin_id=message.from_user.id,
             admin_name=admin_name,
             old_subscription_end=old_subscription_end,
-            new_subscription_end=until_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
+            new_subscription_end=normalized_end,
             payload=message.text,
             description="admin add_time",
             raw_response=None,

@@ -31,6 +31,45 @@ def create_invoice(amount: float, payload: str, description: str = 'Альфре
         raise Exception(f"API Error: {result}")
 
 
+def parse_subscription_end(raw_value, *, return_string: bool = False):
+    """Parse subscription_end regardless of presence of microseconds."""
+    if not raw_value:
+        return (None, None) if return_string else None
+    if isinstance(raw_value, datetime):
+        parsed = raw_value
+    else:
+        value = str(raw_value).replace("T", " ")
+
+        parsed = None
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+            try:
+                parsed = datetime.strptime(value, fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            try:
+                parsed = datetime.fromisoformat(value)
+            except ValueError:
+                parsed = None
+
+    if parsed is None:
+        return (None, None) if return_string else None
+
+    # ensure we always carry microseconds for consistent storage/formatting
+    normalized_str = parsed.strftime("%Y-%m-%d %H:%M:%S.%f")
+    if return_string:
+        return parsed, normalized_str
+    return parsed
+
+
+def normalize_subscription_end(raw_value):
+    """Return subscription_end as string with microseconds or None if unparsable."""
+    _, normalized = parse_subscription_end(raw_value, return_string=True)
+    return normalized
+
+
 def check_invoice(invoice_id: int):
     url = API_URL + 'getInvoices'
     headers = {'Crypto-Pay-API-Token': CRYPTO_BOT_API}

@@ -8,7 +8,7 @@ from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 
-from misc import create_invoice, check_invoice, BDB, get_text, get_channel_id_from_list, check_payment_received, CRYPTO_ADDRESS
+from misc import create_invoice, check_invoice, BDB, get_text, get_channel_id_from_list, check_payment_received, CRYPTO_ADDRESS, parse_subscription_end, normalize_subscription_end
 from keyboards import payment_cb_kb, options_payment_kb, method_payment_kb, start_buttons_kb, cancel_kb, \
     confirm_cancel_kb, plan_selection_keyboard
 
@@ -74,11 +74,12 @@ async def confirm_plans_callback(callback: CallbackQuery, state: FSMContext, bot
     print(selected, selected_date)
 
     if selected_date != "until":
-        date = date_.get(selected_date, 1)
-        BDB.update_user_field(user_id, "subscription_end", datetime.now() + relativedelta(months=date))
+        months = date_.get(selected_date, 1)
+        new_end = datetime.now() + relativedelta(months=months)
     else:
-        date = date_.get(selected_date, datetime(2025, 9, 8, 00, 00, 00, 111111))
-        BDB.update_user_field(user_id, "subscription_end", date)
+        new_end = date_.get(selected_date, datetime(2025, 9, 8, 0, 0, 0, 111111))
+
+    BDB.update_user_field(user_id, "subscription_end", normalize_subscription_end(new_end))
 
     plans_text = "\n".join(selected)
     await callback.message.answer(f"✅ Вибрано плани: \n{plans_text}")
@@ -111,8 +112,10 @@ async def check_subscription_call(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     user = BDB.get_user(user_id)
 
-    await callback_query.message.answer(text=
-        f"Твоя підписка активна до: <b>{datetime.strptime(user['subscription_end'], '%Y-%m-%d %H:%M:%S.%f').strftime('%d.%m.%Y')}</b>",
+    sub_end = parse_subscription_end(user.get("subscription_end"))
+    end_text = sub_end.strftime("%d.%m.%Y") if sub_end else (user.get("subscription_end") or "unknown")
+    await callback_query.message.answer(
+        text=f"???? ???????? ??????? ??: <b>{end_text}</b>",
         reply_markup=start_buttons_kb)
 
 
@@ -180,11 +183,14 @@ async def my_orders_call(callback_query: CallbackQuery, state: FSMContext):
             if status == "paid":
                 user = BDB.get_user(user_id)
 
-                d = datetime.strptime(user["subscription_end"], "%Y-%m-%d %H:%M:%S.%f")
-                subscription_end = d + relativedelta(months=plans[plan])
+                current_end = parse_subscription_end(user.get("subscription_end")) or datetime.now()
+                subscription_end = current_end + relativedelta(months=plans[plan])
 
-                BDB.update_user_field(user_id, "subscription_end",
-                                    subscription_end)
+                BDB.update_user_field(
+                    user_id,
+                    "subscription_end",
+                    normalize_subscription_end(subscription_end)
+                )
                 await callback_query.message.answer(
                     text=get_text("SUBSCRIPTION_EXTENDED").format(date=subscription_end.strftime("%d.%m.%Y")))
                 BDB.update_user_field(user_id, "payment", 0)
@@ -270,9 +276,13 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
                 return
             
             if result_payment:
-                d = datetime.strptime(user["subscription_end"], "%Y-%m-%d %H:%M:%S.%f")
-                subscription_end = d + relativedelta(months=plans[plan])
-                BDB.update_user_field(user_id, "subscription_end", subscription_end)
+                current_end = parse_subscription_end(user.get("subscription_end")) or datetime.now()
+                subscription_end = current_end + relativedelta(months=plans[plan])
+                BDB.update_user_field(
+                    user_id,
+                    "subscription_end",
+                    normalize_subscription_end(subscription_end)
+                )
                 await callback_query.message.answer(text=get_text("SUBSCRIPTION_EXTENDED").format(date=subscription_end.strftime("%d.%m.%Y")))
                 
                 try:

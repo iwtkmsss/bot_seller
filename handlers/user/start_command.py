@@ -2,9 +2,7 @@ from aiogram import Router, Bot
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from datetime import datetime
-
-from misc import BDB, get_text
+from misc import BDB, get_text, parse_subscription_end
 from keyboards import start_buttons_kb, plan_selection_keyboard
 
 router = Router()
@@ -32,5 +30,7 @@ async def cmd_start(message: Message, bot: Bot):
                                    reply_markup=plan_selection_keyboard(user_id))
         await message.answer(text=get_text('NO_ACCESS'))
     elif user["access_granted"] == 1:
-        await message.answer(text=f"Твоя підписка активна до: <b>{datetime.strptime(user['subscription_end'], '%Y-%m-%d %H:%M:%S.%f').strftime('%d.%m.%Y')}</b>", reply_markup=start_buttons_kb)
+        sub_end = parse_subscription_end(user.get("subscription_end"))
+        end_text = sub_end.strftime("%d.%m.%Y") if sub_end else (user.get("subscription_end") or "unknown")
+        await message.answer(text=f"???? ???????? ??????? ??: <b>{end_text}</b>", reply_markup=start_buttons_kb)
 

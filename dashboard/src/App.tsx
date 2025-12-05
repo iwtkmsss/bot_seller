@@ -12,7 +12,7 @@ import runtimeData from './data/runtimeData.json'
 
 type UserStatus = 'active' | 'expiring' | 'expired'
 type PaymentStatus = 'paid' | 'pending' | 'timeout' | 'canceled'
-type TabId = 'overview' | 'stats'
+type TabId = 'overview' | 'stats' | 'payments'
 type SortOrder = 'asc' | 'desc'
 type SearchKey = 'userName' | 'telegramId' | 'plan'
 type PaymentSearchKey = 'userName' | 'telegramId' | 'plan' | 'method'
@@ -461,9 +461,11 @@ const pageButtons = useMemo(() => {
     )
   }
 
+
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'overview', label: 'Обзор' },
-    { id: 'stats', label: 'Статистика' },
+    { id: 'overview', label: '?????' },
+    { id: 'payments', label: '??????? ?????' },
+    { id: 'stats', label: '??????????' },
   ]
 
   return (
@@ -471,7 +473,7 @@ const pageButtons = useMemo(() => {
       <header className="topbar">
         <div>
           <p className="eyebrow">REFUNDER TEAM</p>
-          <h1>Панель подписок и оплат</h1>
+          <h1>?????? ???????? ? ?????</h1>
         </div>
         <div className="tabbar">
           {tabs.map((tab) => (
@@ -484,7 +486,7 @@ const pageButtons = useMemo(() => {
             </button>
           ))}
           <button className="btn ghost" onClick={handleLogout}>
-            Выйти
+            ?????
           </button>
         </div>
       </header>
@@ -495,16 +497,16 @@ const pageButtons = useMemo(() => {
       {activeTab === 'overview' && (
         <>
           <section className="grid">
-            <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="на текущий момент" />
-            <SummaryCard title="Заканчиваются скоро" value={`${totals.expiring}`} />
-            <SummaryCard title="Просрочены" value={`${totals.expired}`} />
-            <SummaryCard title="Оплачено за 30 дней" value={formatMoney(totals.revenue30d)} />
+            <SummaryCard title="???????? ????????" value={`${totals.active}`} sub="?? ??????? ??????" />
+            <SummaryCard title="????????????? ?????" value={`${totals.expiring}`} />
+            <SummaryCard title="??????????" value={`${totals.expired}`} />
+            <SummaryCard title="???????? ?? 30 ????" value={formatMoney(totals.revenue30d)} />
           </section>
 
           <section className="panel">
             <div className="panel-head">
               <div>
-                <h2>Каналы и аудитория</h2>
+                <h2>?????? ? ?????????</h2>
               </div>
             </div>
             <div className="channel-grid">
@@ -512,7 +514,7 @@ const pageButtons = useMemo(() => {
                 <div key={ch.name} className="card channel-card">
                   <div className="channel-title">{ch.name}</div>
                   <div className="channel-count">{ch.members}</div>
-                  <div className="channel-meta muted">участников</div>
+                  <div className="channel-meta muted">??????????</div>
                 </div>
               ))}
             </div>
@@ -521,8 +523,8 @@ const pageButtons = useMemo(() => {
           <section className="panel">
             <div className="panel-head">
               <div>
-                <h2>История оплат</h2>
-                <p className="muted">CryptoBot • USDT TRC-20</p>
+                <h2>??????? ?????</h2>
+                <p className="muted">CryptoBot ? USDT TRC-20</p>
               </div>
             </div>
             <div className="timeline">
@@ -542,105 +544,7 @@ const pageButtons = useMemo(() => {
         </>
       )}
 
-      {activeTab === 'stats' && (
-        <>
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Пользователи</h2>
-            </div>
-          </div>
-
-          <div className="controls">
-            <div className="control-group">
-              <span className="muted">Фильтр статуса:</span>
-              <div className="control-buttons">
-                {['all', 'active', 'expiring', 'expired'].map((key) => (
-                  <button
-                    key={key}
-                    className={filter === key ? 'btn active' : 'btn ghost'}
-                    onClick={() => setFilter(key as UserStatus | 'all')}
-                  >
-                    {key === 'all' ? 'Все' : statusChip[key as UserStatus]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="control-group">
-              <span className="muted">Сортировка:</span>
-              <div className="control-buttons">
-                <button
-                  className={sortOrder === 'desc' ? 'btn active' : 'btn ghost'}
-                  onClick={() => setSortOrder('desc')}
-                >
-                  По убыванию
-                </button>
-                <button
-                  className={sortOrder === 'asc' ? 'btn active' : 'btn ghost'}
-                  onClick={() => setSortOrder('asc')}
-                >
-                  По возрастанию
-                </button>
-              </div>
-            </div>
-
-            <div className="control-group">
-              <span className="muted">Поиск:</span>
-              <select className="input" value={searchKey} onChange={(e) => setSearchKey(e.target.value as SearchKey)}>
-                <option value="userName">Username</option>
-                <option value="telegramId">Telegram ID</option>
-                <option value="plan">План</option>
-              </select>
-              <input
-                className="input"
-                type="text"
-                placeholder="Начните вводить..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="pagination">
-            <button
-              className="btn ghost"
-              disabled={page === 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Назад
-            </button>
-            {pageButtons.map((pNum) => (
-              <button
-                key={pNum}
-                className={page === pNum ? 'btn active' : 'btn ghost'}
-                onClick={() => setPage(pNum)}
-              >
-                {pNum}
-              </button>
-            ))}
-            <button
-              className="btn ghost"
-              disabled={page === totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Вперед
-            </button>
-          </div>
-
-          <div className="table">
-            <div className="table-head">
-              <span>ID</span>
-              <span>Планы</span>
-              <span>Статус</span>
-              <span>Окончание</span>
-            </div>
-            {paginatedUsers.map((u) => (
-              <UserRow key={u.telegramId} user={u} />
-            ))}
-          </div>
-        </section>
-
+      {activeTab === 'payments' && (
         <section className="panel">
           <div className="panel-head">
             <div>
@@ -742,7 +646,105 @@ const pageButtons = useMemo(() => {
             ))}
           </div>
         </section>
-        </>
+      )}
+
+      {activeTab === 'stats' && (
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>????????????</h2>
+            </div>
+          </div>
+
+          <div className="controls">
+            <div className="control-group">
+              <span className="muted">?????? ???????:</span>
+              <div className="control-buttons">
+                {['all', 'active', 'expiring', 'expired'].map((key) => (
+                  <button
+                    key={key}
+                    className={filter === key ? 'btn active' : 'btn ghost'}
+                    onClick={() => setFilter(key as UserStatus | 'all')}
+                  >
+                    {key === 'all' ? '???' : statusChip[key as UserStatus]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="control-group">
+              <span className="muted">??????????:</span>
+              <div className="control-buttons">
+                <button
+                  className={sortOrder === 'desc' ? 'btn active' : 'btn ghost'}
+                  onClick={() => setSortOrder('desc')}
+                >
+                  ?? ????????
+                </button>
+                <button
+                  className={sortOrder === 'asc' ? 'btn active' : 'btn ghost'}
+                  onClick={() => setSortOrder('asc')}
+                >
+                  ?? ???????????
+                </button>
+              </div>
+            </div>
+
+            <div className="control-group">
+              <span className="muted">?????:</span>
+              <select className="input" value={searchKey} onChange={(e) => setSearchKey(e.target.value as SearchKey)}>
+                <option value="userName">Username</option>
+                <option value="telegramId">Telegram ID</option>
+                <option value="plan">????</option>
+              </select>
+              <input
+                className="input"
+                type="text"
+                placeholder="????? ????????..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="pagination">
+            <button
+              className="btn ghost"
+              disabled={page === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ?????
+            </button>
+            {pageButtons.map((pNum) => (
+              <button
+                key={pNum}
+                className={page === pNum ? 'btn active' : 'btn ghost'}
+                onClick={() => setPage(pNum)}
+              >
+                {pNum}
+              </button>
+            ))}
+            <button
+              className="btn ghost"
+              disabled={page === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              ??????
+            </button>
+          </div>
+
+          <div className="table">
+            <div className="table-head">
+              <span>ID</span>
+              <span>?????</span>
+              <span>??????</span>
+              <span>?????????</span>
+            </div>
+            {paginatedUsers.map((u) => (
+              <UserRow key={u.telegramId} user={u} />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )

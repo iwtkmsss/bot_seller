@@ -31,8 +31,6 @@ def plan_selection_keyboard(tg_id: int, selected: list[str] = [], selected_date 
                                 callback_data=f"toggle_date:{tg_id}:two_month"))
     kb.row(InlineKeyboardButton(text="3️⃣ місяці" + ("✅" if "three_month" == selected_date else "❌"),
                                 callback_data=f"toggle_date:{tg_id}:three_month"))
-    kb.row(InlineKeyboardButton(text="До 7 числа включно" + ("✅" if "until" == selected_date else "❌"),
-                                callback_data=f"toggle_date:{tg_id}:until")) # потом удалить
 
     kb.button(text="✅ Підтвердити", callback_data=f"confirm_plans:{tg_id}")
     kb.adjust(1)

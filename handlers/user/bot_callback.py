@@ -73,11 +73,9 @@ async def confirm_plans_callback(callback: CallbackQuery, state: FSMContext, bot
 
     print(selected, selected_date)
 
-    if selected_date != "until":
-        months = date_.get(selected_date, 1)
-        new_end = datetime.now() + relativedelta(months=months)
-    else:
-        new_end = date_.get(selected_date, datetime(2025, 9, 8, 0, 0, 0, 111111))
+    months = date_.get(selected_date, 1)
+    new_end = datetime.now() + relativedelta(months=months)
+
 
     BDB.update_user_field(user_id, "subscription_end", normalize_subscription_end(new_end))
 

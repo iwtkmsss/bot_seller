@@ -433,7 +433,7 @@ const pageButtons = useMemo(() => {
       <header className="topbar">
         <div>
           <p className="eyebrow">REFUNDER TEAM</p>
-          <h1>?????? ???????? ? ?????</h1>
+          <h1>Панель подписок и оплат</h1>
         </div>
         <div className="tabbar">
           {tabs.map((tab) => (
@@ -446,27 +446,27 @@ const pageButtons = useMemo(() => {
             </button>
           ))}
           <button className="btn ghost" onClick={handleLogout}>
-            ?????
+            Выйти
           </button>
         </div>
       </header>
 
-      {loading && <p className="muted">Refreshing dashboard data...</p>}
-      {loadError && <p className="error">Failed to load: {loadError}</p>}
+      {loading && <p className="muted">Обновляем данные...</p>}
+      {loadError && <p className="error">Не удалось загрузить: {loadError}</p>}
 
       {activeTab === 'overview' && (
         <>
           <section className="grid">
-            <SummaryCard title="???????? ????????" value={`${totals.active}`} sub="?? ??????? ??????" />
-            <SummaryCard title="????????????? ?????" value={`${totals.expiring}`} />
-            <SummaryCard title="??????????" value={`${totals.expired}`} />
-            <SummaryCard title="???????? ?? 30 ????" value={formatMoney(totals.revenue30d)} />
+            <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="на текущий момент" />
+            <SummaryCard title="Заканчиваются скоро" value={`${totals.expiring}`} />
+            <SummaryCard title="Просрочены" value={`${totals.expired}`} />
+            <SummaryCard title="Оплачено за 30 дней" value={formatMoney(totals.revenue30d)} />
           </section>
 
           <section className="panel">
             <div className="panel-head">
               <div>
-                <h2>?????? ? ?????????</h2>
+                <h2>Каналы и аудитория</h2>
               </div>
             </div>
             <div className="channel-grid">
@@ -474,7 +474,7 @@ const pageButtons = useMemo(() => {
                 <div key={ch.name} className="card channel-card">
                   <div className="channel-title">{ch.name}</div>
                   <div className="channel-count">{ch.members}</div>
-                  <div className="channel-meta muted">??????????</div>
+                  <div className="channel-meta muted">участников</div>
                 </div>
               ))}
             </div>
@@ -486,13 +486,13 @@ const pageButtons = useMemo(() => {
         <section className="panel">
           <div className="panel-head">
             <div>
-              <h2>??????? ?????</h2>
+              <h2>История оплат</h2>
             </div>
           </div>
 
           <div className="controls">
             <div className="control-group">
-              <span className="muted">?????? ?? ???????:</span>
+              <span className="muted">Фильтр по статусу:</span>
               <div className="control-buttons">
                 {(['all', 'paid', 'pending', 'timeout', 'canceled'] as const).map((key) => (
                   <button
@@ -500,32 +500,32 @@ const pageButtons = useMemo(() => {
                     className={paymentFilter === key ? 'btn active' : 'btn ghost'}
                     onClick={() => setPaymentFilter(key as PaymentStatus | 'all')}
                   >
-                    {key === 'all' ? '???' : paymentChip[key as PaymentStatus]}
+                    {key === 'all' ? 'Все' : paymentChip[key as PaymentStatus]}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="control-group">
-              <span className="muted">??????????:</span>
+              <span className="muted">Сортировка:</span>
               <div className="control-buttons">
                 <button
                   className={paymentSortOrder === 'desc' ? 'btn active' : 'btn ghost'}
                   onClick={() => setPaymentSortOrder('desc')}
                 >
-                  ??????? ?????
+                  Сначала новые
                 </button>
                 <button
                   className={paymentSortOrder === 'asc' ? 'btn active' : 'btn ghost'}
                   onClick={() => setPaymentSortOrder('asc')}
                 >
-                  ??????? ??????
+                  Сначала старые
                 </button>
               </div>
             </div>
 
             <div className="control-group">
-              <span className="muted">?????:</span>
+              <span className="muted">Поиск:</span>
               <select
                 className="input"
                 value={paymentSearchKey}
@@ -533,13 +533,13 @@ const pageButtons = useMemo(() => {
               >
                 <option value="userName">Username</option>
                 <option value="telegramId">Telegram ID</option>
-                <option value="plan">????</option>
-                <option value="method">?????</option>
+                <option value="plan">План</option>
+                <option value="method">Метод</option>
               </select>
               <input
                 className="input"
                 type="text"
-                placeholder="????? ????????..."
+                placeholder="Введи значение..."
                 value={paymentSearchTerm}
                 onChange={(e) => setPaymentSearchTerm(e.target.value)}
               />
@@ -552,7 +552,7 @@ const pageButtons = useMemo(() => {
               disabled={paymentPage === 1}
               onClick={() => setPaymentPage((p) => Math.max(1, p - 1))}
             >
-              ?????
+              Назад
             </button>
             {paymentPageButtons.map((pNum) => (
               <button
@@ -568,16 +568,16 @@ const pageButtons = useMemo(() => {
               disabled={paymentPage === paymentTotalPages}
               onClick={() => setPaymentPage((p) => Math.min(paymentTotalPages, p + 1))}
             >
-              ??????
+              Вперед
             </button>
           </div>
 
           <div className="table">
             <div className="table-head">
-              <span>??????????</span>
-              <span>???? / ?????</span>
-              <span>??????</span>
-              <span>????? / ????</span>
+              <span>Плательщик</span>
+              <span>План / Метод</span>
+              <span>Статус</span>
+              <span>Сумма / Дата</span>
             </div>
             {paginatedPayments.map((p) => (
               <PaymentTableRow key={p.id ?? `${p.userName}-${p.plan}`} payment={p} />
@@ -590,13 +590,13 @@ const pageButtons = useMemo(() => {
         <section className="panel">
           <div className="panel-head">
             <div>
-              <h2>????????????</h2>
+              <h2>Пользователи</h2>
             </div>
           </div>
 
           <div className="controls">
             <div className="control-group">
-              <span className="muted">?????? ???????:</span>
+              <span className="muted">Фильтр статуса:</span>
               <div className="control-buttons">
                 {['all', 'active', 'expiring', 'expired'].map((key) => (
                   <button
@@ -604,41 +604,41 @@ const pageButtons = useMemo(() => {
                     className={filter === key ? 'btn active' : 'btn ghost'}
                     onClick={() => setFilter(key as UserStatus | 'all')}
                   >
-                    {key === 'all' ? '???' : statusChip[key as UserStatus]}
+                    {key === 'all' ? 'Все' : statusChip[key as UserStatus]}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="control-group">
-              <span className="muted">??????????:</span>
+              <span className="muted">Сортировка:</span>
               <div className="control-buttons">
                 <button
                   className={sortOrder === 'desc' ? 'btn active' : 'btn ghost'}
                   onClick={() => setSortOrder('desc')}
                 >
-                  ?? ????????
+                  По убыванию
                 </button>
                 <button
                   className={sortOrder === 'asc' ? 'btn active' : 'btn ghost'}
                   onClick={() => setSortOrder('asc')}
                 >
-                  ?? ???????????
+                  По возрастанию
                 </button>
               </div>
             </div>
 
             <div className="control-group">
-              <span className="muted">?????:</span>
+              <span className="muted">Поиск:</span>
               <select className="input" value={searchKey} onChange={(e) => setSearchKey(e.target.value as SearchKey)}>
                 <option value="userName">Username</option>
                 <option value="telegramId">Telegram ID</option>
-                <option value="plan">????</option>
+                <option value="plan">План</option>
               </select>
               <input
                 className="input"
                 type="text"
-                placeholder="????? ????????..."
+                placeholder="Введи значение..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -651,7 +651,7 @@ const pageButtons = useMemo(() => {
               disabled={page === 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              ?????
+              Назад
             </button>
             {pageButtons.map((pNum) => (
               <button
@@ -667,16 +667,16 @@ const pageButtons = useMemo(() => {
               disabled={page === totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
-              ??????
+              Вперед
             </button>
           </div>
 
           <div className="table">
             <div className="table-head">
               <span>ID</span>
-              <span>?????</span>
-              <span>??????</span>
-              <span>?????????</span>
+              <span>Планы</span>
+              <span>Статус</span>
+              <span>Окончание</span>
             </div>
             {paginatedUsers.map((u) => (
               <UserRow key={u.telegramId} user={u} />

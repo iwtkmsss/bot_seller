@@ -30,10 +30,10 @@ const statusChip: Record<UserStatus, string> = {
 
 
 const paymentChip: Record<PaymentStatus, string> = {
-  paid: '????????',
-  pending: '??????',
-  timeout: '????-???',
-  canceled: '?????????',
+  paid: 'Оплачено',
+  pending: 'Ожидает',
+  timeout: 'Тайм-аут',
+  canceled: 'Отменено',
 }
 
 const ADMIN_ROLES = (import.meta.env.VITE_ADMIN_ROLES ?? 'admin')
@@ -72,46 +72,6 @@ function SummaryCard({ title, value, sub }: { title: string; value: string; sub?
       <div className="card-title">{title}</div>
       <div className="card-value">{value}</div>
       {sub && <div className="card-sub">{sub}</div>}
-    </div>
-  )
-}
-
-function PaymentRow({
-  amount,
-  status,
-  paidAt,
-  plan,
-  method,
-  userName,
-}: {
-  amount: number
-  status: string
-  paidAt?: string
-  plan?: string
-  method: string
-  userName: string
-}) {
-  const label =
-    status === 'paid'
-      ? 'Оплачено'
-      : status === 'pending'
-        ? 'В ожидании'
-        : status === 'timeout'
-          ? 'Таймаут'
-          : 'Отклонено'
-  return (
-    <div className="timeline-item">
-      <div>
-        <div className="timeline-title">
-          {userName} • {plan || 'Без плана'}
-        </div>
-        <div className="timeline-meta">
-          <span className="pill">{label}</span>
-          <span className="muted">{method}</span>
-          <span className="muted">{paidAt ? formatDate(paidAt) : '—'}</span>
-        </div>
-      </div>
-      <div className="timeline-amount">{formatMoney(amount)}</div>
     </div>
   )
 }
@@ -463,9 +423,9 @@ const pageButtons = useMemo(() => {
 
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'overview', label: '?????' },
-    { id: 'payments', label: '??????? ?????' },
-    { id: 'stats', label: '??????????' },
+    { id: 'overview', label: 'Обзор' },
+    { id: 'payments', label: 'История оплат' },
+    { id: 'stats', label: 'Статистика' },
   ]
 
   return (
@@ -516,28 +476,6 @@ const pageButtons = useMemo(() => {
                   <div className="channel-count">{ch.members}</div>
                   <div className="channel-meta muted">??????????</div>
                 </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <div>
-                <h2>??????? ?????</h2>
-                <p className="muted">CryptoBot ? USDT TRC-20</p>
-              </div>
-            </div>
-            <div className="timeline">
-              {data.payments.map((p) => (
-                <PaymentRow
-                  key={p.id}
-                  amount={p.amount}
-                  status={p.status}
-                  paidAt={p.paidAt}
-                  plan={p.plan}
-                  method={p.method}
-                  userName={p.userName}
-                />
               ))}
             </div>
           </section>

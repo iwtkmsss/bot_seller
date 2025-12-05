@@ -11,9 +11,11 @@ import {
 import runtimeData from './data/runtimeData.json'
 
 type UserStatus = 'active' | 'expiring' | 'expired'
+type PaymentStatus = 'paid' | 'pending' | 'timeout' | 'canceled'
 type TabId = 'overview' | 'stats'
 type SortOrder = 'asc' | 'desc'
 type SearchKey = 'userName' | 'telegramId' | 'plan'
+type PaymentSearchKey = 'userName' | 'telegramId' | 'plan' | 'method'
 type AuthState = {
   authed: boolean
   attemptsLeft: number
@@ -24,6 +26,14 @@ const statusChip: Record<UserStatus, string> = {
   active: 'Активен',
   expiring: 'Скоро истекает',
   expired: 'Просрочен',
+}
+
+
+const paymentChip: Record<PaymentStatus, string> = {
+  paid: '????????',
+  pending: '??????',
+  timeout: '????-???',
+  canceled: '?????????',
 }
 
 const ADMIN_ROLES = (import.meta.env.VITE_ADMIN_ROLES ?? 'admin')
@@ -125,9 +135,33 @@ const UserRow = memo(function UserRow({ user }: { user: MockUser }) {
   )
 })
 
+const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: PaymentItem }) {
+  return (
+    <div className="table-row">
+      <div>
+        <div className="strong">{payment.userName || 'unknown'}</div>
+        <div className="muted">{payment.telegramId ?? '—'}</div>
+      </div>
+      <div>
+        <div>{payment.plan || '—'}</div>
+        <div className="muted">{payment.method}</div>
+      </div>
+      <div>
+        <span className="pill">{paymentChip[payment.status as PaymentStatus]}</span>
+      </div>
+      <div>
+        <div>{formatMoney(payment.amount)}</div>
+        <div className="muted">{formatDate(payment.paidAt)}</div>
+      </div>
+    </div>
+  )
+})
+
+type PaymentItem = MockPayment & { telegramId?: number | string }
+
 type DataShape = {
   users: MockUser[]
-  payments: MockPayment[]
+  payments: PaymentItem[]
   channels: MockChannel[]
 }
 
@@ -162,6 +196,11 @@ export default function App() {
       return { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
     }
   })
+  const [paymentFilter, setPaymentFilter] = useState<PaymentStatus | 'all'>('all')
+  const [paymentSortOrder, setPaymentSortOrder] = useState<SortOrder>('desc')
+  const [paymentSearchKey, setPaymentSearchKey] = useState<PaymentSearchKey>('userName')
+  const [paymentSearchTerm, setPaymentSearchTerm] = useState('')
+  const [paymentPage, setPaymentPage] = useState(1)
   const [data, setData] = useState<DataShape>(fallbackData)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -235,6 +274,9 @@ export default function App() {
   useEffect(() => {
     setPage(1)
   }, [filter, sortOrder, searchKey, searchTerm])
+  useEffect(() => {
+    setPaymentPage(1)
+  }, [paymentFilter, paymentSortOrder, paymentSearchKey, paymentSearchTerm])
 
   const visibleUsers = useMemo(() => {
     const base = filter === 'all' ? visiblePool : visiblePool.filter((u) => u.status === filter)
@@ -258,6 +300,32 @@ export default function App() {
     })
   }, [filter, sortOrder, visiblePool, searchKey, searchTerm])
 
+  const visiblePayments = useMemo(() => {
+    const base =
+      paymentFilter === 'all'
+        ? data.payments
+        : data.payments.filter((p) => p.status === paymentFilter)
+    const q = paymentSearchTerm.trim().toLowerCase()
+    const filteredByQuery =
+      q.length === 0
+        ? base
+        : base.filter((p) => {
+            if (paymentSearchKey === 'telegramId') return `${p.telegramId ?? ''}`.startsWith(q)
+            if (paymentSearchKey === 'plan') return (p.plan || '').toLowerCase().includes(q)
+            if (paymentSearchKey === 'method') return (p.method || '').toLowerCase().includes(q)
+            return (p.userName || '').toLowerCase().includes(q)
+          })
+    const parseDate = (val?: string) => (val ? Date.parse(val.replace(' ', 'T')) : 0)
+    return [...filteredByQuery].sort((a, b) => {
+      const aDate = parseDate(a.paidAt)
+      const bDate = parseDate(b.paidAt)
+      const aVal = aDate || a.amount || 0
+      const bVal = bDate || b.amount || 0
+      const diff = bVal - aVal
+      return paymentSortOrder === 'desc' ? diff : -diff
+    })
+  }, [data.payments, paymentFilter, paymentSearchKey, paymentSearchTerm, paymentSortOrder])
+
 const totals = useMemo(() => {
   const active = visiblePool.filter((u) => u.status === 'active').length
   const expiring = visiblePool.filter((u) => u.status === 'expiring').length
@@ -277,6 +345,16 @@ const paginatedUsers = useMemo(() => {
 useEffect(() => {
   setPage((p) => Math.min(p, totalPages))
 }, [totalPages])
+
+const paymentTotalPages = Math.max(1, Math.ceil(visiblePayments.length / PAGE_SIZE))
+const paginatedPayments = useMemo(() => {
+  const start = (paymentPage - 1) * PAGE_SIZE
+  return visiblePayments.slice(start, start + PAGE_SIZE)
+}, [paymentPage, visiblePayments])
+
+useEffect(() => {
+  setPaymentPage((p) => Math.min(p, paymentTotalPages))
+}, [paymentTotalPages])
 
 const channelStats = useMemo(
   () =>
@@ -338,6 +416,18 @@ const pageButtons = useMemo(() => {
       ).values(),
     )
   }, [page, totalPages])
+
+  const paymentPageButtons = useMemo(() => {
+    const targets = [1, paymentPage - 10, paymentPage - 5, paymentPage, paymentPage + 5, paymentPage + 10, paymentTotalPages]
+    return Array.from(
+      new Map(
+        targets
+          .filter((p) => p >= 1 && p <= paymentTotalPages)
+          .sort((a, b) => a - b)
+          .map((p) => [p, p]),
+      ).values(),
+    )
+  }, [paymentPage, paymentTotalPages])
 
   if (!auth.authed) {
     return (
@@ -453,6 +543,7 @@ const pageButtons = useMemo(() => {
       )}
 
       {activeTab === 'stats' && (
+        <>
         <section className="panel">
           <div className="panel-head">
             <div>
@@ -549,6 +640,109 @@ const pageButtons = useMemo(() => {
             ))}
           </div>
         </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>??????? ?????</h2>
+            </div>
+          </div>
+
+          <div className="controls">
+            <div className="control-group">
+              <span className="muted">?????? ?? ???????:</span>
+              <div className="control-buttons">
+                {(['all', 'paid', 'pending', 'timeout', 'canceled'] as const).map((key) => (
+                  <button
+                    key={key}
+                    className={paymentFilter === key ? 'btn active' : 'btn ghost'}
+                    onClick={() => setPaymentFilter(key as PaymentStatus | 'all')}
+                  >
+                    {key === 'all' ? '???' : paymentChip[key as PaymentStatus]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="control-group">
+              <span className="muted">??????????:</span>
+              <div className="control-buttons">
+                <button
+                  className={paymentSortOrder === 'desc' ? 'btn active' : 'btn ghost'}
+                  onClick={() => setPaymentSortOrder('desc')}
+                >
+                  ??????? ?????
+                </button>
+                <button
+                  className={paymentSortOrder === 'asc' ? 'btn active' : 'btn ghost'}
+                  onClick={() => setPaymentSortOrder('asc')}
+                >
+                  ??????? ??????
+                </button>
+              </div>
+            </div>
+
+            <div className="control-group">
+              <span className="muted">?????:</span>
+              <select
+                className="input"
+                value={paymentSearchKey}
+                onChange={(e) => setPaymentSearchKey(e.target.value as PaymentSearchKey)}
+              >
+                <option value="userName">Username</option>
+                <option value="telegramId">Telegram ID</option>
+                <option value="plan">????</option>
+                <option value="method">?????</option>
+              </select>
+              <input
+                className="input"
+                type="text"
+                placeholder="????? ????????..."
+                value={paymentSearchTerm}
+                onChange={(e) => setPaymentSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="pagination">
+            <button
+              className="btn ghost"
+              disabled={paymentPage === 1}
+              onClick={() => setPaymentPage((p) => Math.max(1, p - 1))}
+            >
+              ?????
+            </button>
+            {paymentPageButtons.map((pNum) => (
+              <button
+                key={pNum}
+                className={paymentPage === pNum ? 'btn active' : 'btn ghost'}
+                onClick={() => setPaymentPage(pNum)}
+              >
+                {pNum}
+              </button>
+            ))}
+            <button
+              className="btn ghost"
+              disabled={paymentPage === paymentTotalPages}
+              onClick={() => setPaymentPage((p) => Math.min(paymentTotalPages, p + 1))}
+            >
+              ??????
+            </button>
+          </div>
+
+          <div className="table">
+            <div className="table-head">
+              <span>??????????</span>
+              <span>???? / ?????</span>
+              <span>??????</span>
+              <span>????? / ????</span>
+            </div>
+            {paginatedPayments.map((p) => (
+              <PaymentTableRow key={p.id ?? `${p.userName}-${p.plan}`} payment={p} />
+            ))}
+          </div>
+        </section>
+        </>
       )}
     </div>
   )

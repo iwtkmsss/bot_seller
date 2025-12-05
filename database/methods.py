@@ -1,10 +1,11 @@
 import json
 import sqlite3
+from datetime import datetime
 
 
 class Database:
-    def __init__(self, db_file):
-        self.conn = sqlite3.connect(db_file)
+    def __init__(self, db_file, *, check_same_thread=True):
+        self.conn = sqlite3.connect(db_file, check_same_thread=check_same_thread)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         self._ensure_schema()
@@ -75,6 +76,13 @@ class Database:
         )
         self.conn.commit()
 
+    def _table_exists(self, table_name: str) -> bool:
+        self.cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ? LIMIT 1;",
+            (table_name,),
+        )
+        return self.cursor.fetchone() is not None
+
     @staticmethod
     def _jsonify(value):
         if value is None:
@@ -85,6 +93,63 @@ class Database:
             return json.dumps(value, ensure_ascii=False)
         except Exception:
             return str(value)
+
+    @staticmethod
+    def _safe_json_loads(raw, fallback=None):
+        if raw is None:
+            return fallback
+        try:
+            return json.loads(raw)
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _parse_subscription_end(raw_value):
+        """Parse subscription_end and return (datetime or None, normalized string or None)."""
+        if not raw_value:
+            return None, None
+
+        raw = str(raw_value).replace("T", " ")
+        parsed = None
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d",
+            "%d.%m.%Y %H:%M",
+            "%d.%m.%Y",
+        ):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                # default to end of day when only date is provided
+                if fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+                    parsed = parsed.replace(hour=23, minute=59)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            return None, None
+
+        normalized = parsed.strftime("%Y-%m-%d %H:%M:%S.%f")
+        return parsed, normalized
+
+    @staticmethod
+    def _coerce_datetime(raw_value):
+        parsed, _ = Database._parse_subscription_end(raw_value)
+        return parsed
+
+    @staticmethod
+    def _status_for_subscription_end(end_dt, expiring_threshold_days=7, now=None):
+        if end_dt is None:
+            return "expired"
+
+        now = now or datetime.now()
+        diff = end_dt - now
+        if diff.total_seconds() <= 0:
+            return "expired"
+        if diff.total_seconds() <= expiring_threshold_days * 86400:
+            return "expiring"
+        return "active"
 
     def create_payment_entry(
         self,
@@ -416,6 +481,90 @@ class Database:
             (json.dumps(addresses),)
         )
         self.conn.commit()
+
+    def get_dashboard_snapshot(self, *, payments_limit: int = 120, expiring_threshold_days: int = 7):
+        """
+        Aggregate dashboard-friendly payload with users, payments and channels.
+        """
+        now = datetime.now()
+
+        users_raw = []
+        if self._table_exists("users"):
+            users_raw = [dict(row) for row in self.cursor.execute("SELECT * FROM users")]
+
+        payments_raw = []
+        if self._table_exists("payments"):
+            payments_raw = [
+                dict(row)
+                for row in self.cursor.execute(
+                    "SELECT * FROM payments ORDER BY created_at DESC LIMIT ?",
+                    (int(payments_limit),),
+                )
+            ]
+
+        latest_paid = {}
+        for row in payments_raw:
+            status = (row.get("status") or "").lower()
+            if status != "paid":
+                continue
+            ts = self._coerce_datetime(
+                row.get("paid_at")
+                or row.get("tx_timestamp")
+                or row.get("updated_at")
+                or row.get("created_at")
+            ) or datetime.min
+            uid = row.get("telegram_id")
+            if uid is None:
+                continue
+            prev = latest_paid.get(uid)
+            if prev is None or ts > prev["ts"]:
+                latest_paid[uid] = {"ts": ts, "amount": float(row.get("amount") or 0)}
+
+        users = []
+        for row in users_raw:
+            plans = self._safe_json_loads(row.get("subscription_plan"), [])
+            parsed_end, normalized_end = self._parse_subscription_end(row.get("subscription_end"))
+            status = self._status_for_subscription_end(parsed_end, expiring_threshold_days, now)
+            plan_price = latest_paid.get(row.get("telegram_id"), {}).get("amount")
+            users.append(
+                {
+                    "telegramId": row.get("telegram_id"),
+                    "userName": row.get("user_name") or "",
+                    "firstName": row.get("first_name"),
+                    "plan": plans or [],
+                    "subscriptionEnd": normalized_end,
+                    "status": status,
+                    "jobTitle": row.get("job_title") or "user",
+                    "planPrice": plan_price,
+                }
+            )
+
+        channels_src = self.get_channels() if self._table_exists("settings") else []
+        active_users = [u for u in users if u["status"] != "expired"]
+        channels = [
+            {
+                "name": ch["name"],
+                "members": sum(1 for u in active_users if ch["name"] in (u.get("plan") or [])),
+            }
+            for ch in channels_src
+        ]
+
+        payments = []
+        for row in payments_raw:
+            payments.append(
+                {
+                    "id": row.get("id"),
+                    "telegramId": row.get("telegram_id"),
+                    "userName": row.get("user_name") or str(row.get("telegram_id")),
+                    "amount": float(row.get("amount") or 0),
+                    "status": row.get("status"),
+                    "paidAt": row.get("paid_at"),
+                    "plan": row.get("plan"),
+                    "method": row.get("method"),
+                }
+            )
+
+        return {"users": users, "payments": payments, "channels": channels}
 
     def close(self):
         self.cursor.close()

@@ -133,7 +133,7 @@ type DataShape = {
 
 const runtime = runtimeData as DataShape
 const hasRuntime = Array.isArray(runtime?.users) && runtime.users.length > 0
-const dataSource: DataShape = hasRuntime
+const fallbackData: DataShape = hasRuntime
   ? runtime
   : {
       users: mockUsers,
@@ -162,13 +162,74 @@ export default function App() {
       return { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
     }
   })
+  const [data, setData] = useState<DataShape>(fallbackData)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loginInput, setLoginInput] = useState('')
   const [passInput, setPassInput] = useState('')
   const [authError, setAuthError] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!auth.authed) {
+      setLoadError(null)
+      setLoading(false)
+      setData(fallbackData)
+      return
+    }
+
+    const apiUrl = import.meta.env.VITE_DASHBOARD_API_URL
+    if (!apiUrl) {
+      setLoadError(null)
+      setLoading(false)
+      setData(fallbackData)
+      return
+    }
+
+    const controller = new AbortController()
+    const fetchData = async () => {
+      setLoading(true)
+      setLoadError(null)
+      try {
+        const headers: Record<string, string> = { Accept: 'application/json' }
+        const token = import.meta.env.VITE_DASHBOARD_API_TOKEN
+        if (token) headers.Authorization = `Bearer ${token}`
+
+        const resp = await fetch(apiUrl, { headers, signal: controller.signal })
+        if (!resp.ok) {
+          throw new Error(`API responded with ${resp.status}`)
+        }
+
+        const payload = (await resp.json()) as Partial<DataShape> | null
+        if (
+          !payload ||
+          !Array.isArray(payload.users) ||
+          !Array.isArray(payload.payments) ||
+          !Array.isArray(payload.channels)
+        ) {
+          throw new Error('Unexpected payload from dashboard API')
+        }
+
+        setData({
+          users: payload.users,
+          payments: payload.payments,
+          channels: payload.channels,
+        })
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard data')
+        setData(fallbackData)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+    return () => controller.abort()
+  }, [auth.authed])
+
   const visiblePool = useMemo(
-    () => dataSource.users.filter((u) => !ADMIN_ROLES.includes((u.jobTitle || '').toLowerCase())),
-    [],
+    () => data.users.filter((u) => !ADMIN_ROLES.includes((u.jobTitle || '').toLowerCase())),
+    [data.users],
   )
 
   useEffect(() => {
@@ -201,11 +262,11 @@ const totals = useMemo(() => {
   const active = visiblePool.filter((u) => u.status === 'active').length
   const expiring = visiblePool.filter((u) => u.status === 'expiring').length
   const expired = visiblePool.filter((u) => u.status === 'expired').length
-  const revenue30d = dataSource.payments
-      .filter((p) => p.status === 'paid')
-      .reduce((acc, p) => acc + p.amount, 0)
-    return { active, expiring, expired, revenue30d }
-}, [visiblePool])
+  const revenue30d = data.payments
+    .filter((p) => p.status === 'paid')
+    .reduce((acc, p) => acc + p.amount, 0)
+  return { active, expiring, expired, revenue30d }
+}, [visiblePool, data.payments])
 
 const totalPages = Math.max(1, Math.ceil(visibleUsers.length / PAGE_SIZE))
 const paginatedUsers = useMemo(() => {
@@ -219,11 +280,11 @@ useEffect(() => {
 
 const channelStats = useMemo(
   () =>
-    dataSource.channels.map((ch) => ({
+    data.channels.map((ch) => ({
       name: ch.name,
       members: ch.members ?? 0,
     })),
-  [dataSource.channels],
+  [data.channels],
 )
 
 const locked = auth.lockedUntil > Date.now()
@@ -261,6 +322,9 @@ const handleLogout = () => {
   localStorage.setItem('dashboard_auth', JSON.stringify(next))
   setLoginInput('')
   setPassInput('')
+  setData(fallbackData)
+  setLoadError(null)
+  setLoading(false)
 }
 
 const pageButtons = useMemo(() => {
@@ -335,6 +399,9 @@ const pageButtons = useMemo(() => {
         </div>
       </header>
 
+      {loading && <p className="muted">Refreshing dashboard data...</p>}
+      {loadError && <p className="error">Failed to load: {loadError}</p>}
+
       {activeTab === 'overview' && (
         <>
           <section className="grid">
@@ -369,7 +436,7 @@ const pageButtons = useMemo(() => {
               </div>
             </div>
             <div className="timeline">
-              {dataSource.payments.map((p) => (
+              {data.payments.map((p) => (
                 <PaymentRow
                   key={p.id}
                   amount={p.amount}

@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "sync-db": "node scripts/export-db.mjs",
-    "watch-db": "node scripts/watch-db.mjs"
+    "watch-db": "node scripts/watch-db.mjs",
+    "api": "node server.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.7",
@@ -17,6 +18,10 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sql.js": "^1.12.0"

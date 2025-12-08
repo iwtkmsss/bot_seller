@@ -24,14 +24,13 @@ type AuthState = {
 
 const statusChip: Record<UserStatus, string> = {
   active: 'Активен',
-  expiring: 'Скоро истекает',
+  expiring: 'Скоро заканчивается',
   expired: 'Просрочен',
 }
 
-
 const paymentChip: Record<PaymentStatus, string> = {
   paid: 'Оплачено',
-  pending: 'Ожидает',
+  pending: 'В обработке',
   timeout: 'Тайм-аут',
   canceled: 'Отменено',
 }
@@ -95,6 +94,13 @@ const UserRow = memo(function UserRow({ user }: { user: MockUser }) {
   )
 })
 
+function maskWallet(addr?: string | null) {
+  if (!addr) return '—'
+  const value = String(addr)
+  if (value.length <= 10) return value
+  return `${value.slice(0, 5)}...${value.slice(-5)}`
+}
+
 const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: PaymentItem }) {
   return (
     <div className="table-row">
@@ -106,6 +112,7 @@ const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: Pa
         <div>{payment.plan || '—'}</div>
         <div className="muted">{payment.method}</div>
       </div>
+      <div className="muted">{maskWallet(payment.walletAddress)}</div>
       <div>
         <span className="pill">{paymentChip[payment.status as PaymentStatus]}</span>
       </div>
@@ -117,7 +124,7 @@ const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: Pa
   )
 })
 
-type PaymentItem = MockPayment & { telegramId?: number | string }
+type PaymentItem = MockPayment & { telegramId?: number | string; walletAddress?: string | null }
 
 type DataShape = {
   users: MockUser[]
@@ -286,90 +293,92 @@ export default function App() {
     })
   }, [data.payments, paymentFilter, paymentSearchKey, paymentSearchTerm, paymentSortOrder])
 
-const totals = useMemo(() => {
-  const active = visiblePool.filter((u) => u.status === 'active').length
-  const expiring = visiblePool.filter((u) => u.status === 'expiring').length
-  const expired = visiblePool.filter((u) => u.status === 'expired').length
-  const revenue30d = data.payments
-    .filter((p) => p.status === 'paid')
-    .reduce((acc, p) => acc + p.amount, 0)
-  return { active, expiring, expired, revenue30d }
-}, [visiblePool, data.payments])
+  const totals = useMemo(() => {
+    // totalling по всем пользователям (включая админов), админов скрываем только в таблицах
+    const pool = data.users
+    const active = pool.filter((u) => u.status === 'active' || u.status === 'expiring').length
+    const expiring = pool.filter((u) => u.status === 'expiring').length
+    const expired = pool.filter((u) => u.status === 'expired').length
+    const revenue30d = data.payments
+      .filter((p) => p.status === 'paid')
+      .reduce((acc, p) => acc + p.amount, 0)
+    return { active, expiring, expired, revenue30d }
+  }, [data.users, data.payments])
 
-const totalPages = Math.max(1, Math.ceil(visibleUsers.length / PAGE_SIZE))
-const paginatedUsers = useMemo(() => {
-  const start = (page - 1) * PAGE_SIZE
-  return visibleUsers.slice(start, start + PAGE_SIZE)
-}, [page, visibleUsers])
+  const totalPages = Math.max(1, Math.ceil(visibleUsers.length / PAGE_SIZE))
+  const paginatedUsers = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return visibleUsers.slice(start, start + PAGE_SIZE)
+  }, [page, visibleUsers])
 
-useEffect(() => {
-  setPage((p) => Math.min(p, totalPages))
-}, [totalPages])
+  useEffect(() => {
+    setPage((p) => Math.min(p, totalPages))
+  }, [totalPages])
 
-const paymentTotalPages = Math.max(1, Math.ceil(visiblePayments.length / PAGE_SIZE))
-const paginatedPayments = useMemo(() => {
-  const start = (paymentPage - 1) * PAGE_SIZE
-  return visiblePayments.slice(start, start + PAGE_SIZE)
-}, [paymentPage, visiblePayments])
+  const paymentTotalPages = Math.max(1, Math.ceil(visiblePayments.length / PAGE_SIZE))
+  const paginatedPayments = useMemo(() => {
+    const start = (paymentPage - 1) * PAGE_SIZE
+    return visiblePayments.slice(start, start + PAGE_SIZE)
+  }, [paymentPage, visiblePayments])
 
-useEffect(() => {
-  setPaymentPage((p) => Math.min(p, paymentTotalPages))
-}, [paymentTotalPages])
+  useEffect(() => {
+    setPaymentPage((p) => Math.min(p, paymentTotalPages))
+  }, [paymentTotalPages])
 
-const channelStats = useMemo(
-  () =>
-    data.channels.map((ch) => ({
-      name: ch.name,
-      members: ch.members ?? 0,
-    })),
-  [data.channels],
-)
+  const channelStats = useMemo(
+    () =>
+      data.channels.map((ch) => ({
+        name: ch.name,
+        members: ch.members ?? 0,
+      })),
+    [data.channels],
+  )
 
-const locked = auth.lockedUntil > Date.now()
+  const locked = auth.lockedUntil > Date.now()
 
-const handleLogin = (e: FormEvent) => {
-  e.preventDefault()
-  if (locked) {
-    setAuthError(`Подождите ${Math.ceil((auth.lockedUntil - Date.now()) / 1000)} сек.`)
-    return
+  const handleLogin = (e: FormEvent) => {
+    e.preventDefault()
+    if (locked) {
+      setAuthError(`Слишком много попыток. Подождите ${Math.ceil((auth.lockedUntil - Date.now()) / 1000)} сек.`)
+      return
+    }
+    if (loginInput === AUTH_USER && passInput === AUTH_PASS) {
+      const next = { authed: true, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
+      setAuth(next)
+      localStorage.setItem('dashboard_auth', JSON.stringify(next))
+      setAuthError(null)
+      return
+    }
+    const nextAttempts = auth.attemptsLeft - 1
+    if (nextAttempts <= 0) {
+      const next: AuthState = { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: Date.now() + LOCK_MS }
+      setAuth(next)
+      localStorage.setItem('dashboard_auth', JSON.stringify(next))
+      setAuthError(`Слишком много попыток. Вход закрыт на ${LOCK_MS / 1000} сек.`)
+    } else {
+      const next: AuthState = { authed: false, attemptsLeft: nextAttempts, lockedUntil: 0 }
+      setAuth(next)
+      localStorage.setItem('dashboard_auth', JSON.stringify(next))
+      setAuthError(`Неверно. Осталось попыток: ${nextAttempts}`)
+    }
   }
-  if (loginInput === AUTH_USER && passInput === AUTH_PASS) {
-    const next = { authed: true, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
+
+  const handleLogout = () => {
+    const next = { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
     setAuth(next)
     localStorage.setItem('dashboard_auth', JSON.stringify(next))
-    setAuthError(null)
-    return
+    setLoginInput('')
+    setPassInput('')
+    setData(fallbackData)
+    setLoadError(null)
+    setLoading(false)
   }
-  const nextAttempts = auth.attemptsLeft - 1
-  if (nextAttempts <= 0) {
-    const next: AuthState = { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: Date.now() + LOCK_MS }
-    setAuth(next)
-    localStorage.setItem('dashboard_auth', JSON.stringify(next))
-    setAuthError(`Блокировка на ${LOCK_MS / 1000} сек.`)
-  } else {
-    const next: AuthState = { authed: false, attemptsLeft: nextAttempts, lockedUntil: 0 }
-    setAuth(next)
-    localStorage.setItem('dashboard_auth', JSON.stringify(next))
-    setAuthError(`Неверно. Осталось попыток: ${nextAttempts}`)
-  }
-}
 
-const handleLogout = () => {
-  const next = { authed: false, attemptsLeft: MAX_ATTEMPTS, lockedUntil: 0 }
-  setAuth(next)
-  localStorage.setItem('dashboard_auth', JSON.stringify(next))
-  setLoginInput('')
-  setPassInput('')
-  setData(fallbackData)
-  setLoadError(null)
-  setLoading(false)
-}
-
-const pageButtons = useMemo(() => {
-  const targets = [1, page - 10, page - 5, page, page + 5, page + 10, totalPages]
-  return Array.from(
-    new Map(
-      targets
+  const pageButtons = useMemo(() => {
+    const targets = [1, page - 10, page - 5, page, page + 5, page + 10, totalPages]
+    return Array.from(
+      new Map(
+        targets
           .filter((p) => p >= 1 && p <= totalPages)
           .sort((a, b) => a - b)
           .map((p) => [p, p]),
@@ -378,7 +387,15 @@ const pageButtons = useMemo(() => {
   }, [page, totalPages])
 
   const paymentPageButtons = useMemo(() => {
-    const targets = [1, paymentPage - 10, paymentPage - 5, paymentPage, paymentPage + 5, paymentPage + 10, paymentTotalPages]
+    const targets = [
+      1,
+      paymentPage - 10,
+      paymentPage - 5,
+      paymentPage,
+      paymentPage + 5,
+      paymentPage + 10,
+      paymentTotalPages,
+    ]
     return Array.from(
       new Map(
         targets
@@ -415,12 +432,15 @@ const pageButtons = useMemo(() => {
             </button>
           </form>
           {authError && <p className="error">{authError}</p>}
-          {locked && <p className="muted">Разблокировка через {Math.ceil((auth.lockedUntil - Date.now()) / 1000)} сек.</p>}
+          {locked && (
+            <p className="muted">
+              Вход временно ограничен. Подождите {Math.ceil((auth.lockedUntil - Date.now()) / 1000)} сек.
+            </p>
+          )}
         </div>
       </div>
     )
   }
-
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: 'Обзор' },
@@ -457,7 +477,7 @@ const pageButtons = useMemo(() => {
       {activeTab === 'overview' && (
         <>
           <section className="grid">
-            <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="на текущий момент" />
+            <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="по текущим данным" />
             <SummaryCard title="Заканчиваются скоро" value={`${totals.expiring}`} />
             <SummaryCard title="Просрочены" value={`${totals.expired}`} />
             <SummaryCard title="Оплачено за 30 дней" value={formatMoney(totals.revenue30d)} />
@@ -576,6 +596,7 @@ const pageButtons = useMemo(() => {
             <div className="table-head">
               <span>Плательщик</span>
               <span>План / Метод</span>
+              <span>Кошелек</span>
               <span>Статус</span>
               <span>Сумма / Дата</span>
             </div>

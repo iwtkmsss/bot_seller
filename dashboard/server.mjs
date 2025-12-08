@@ -49,13 +49,6 @@ const safeJson = (raw, fallback) => {
 const parseEnd = (raw) => {
   if (!raw) return null
   const value = String(raw).replace('T', ' ')
-  const formats = [
-    'YYYY-MM-DD HH:mm:ss.SSSSSS',
-    'YYYY-MM-DD HH:mm:ss',
-    'YYYY-MM-DD',
-    'DD.MM.YYYY HH:mm',
-    'DD.MM.YYYY',
-  ]
 
   // basic parsing without heavy deps
   const tryParse = (val) => {
@@ -64,15 +57,18 @@ const parseEnd = (raw) => {
     return null
   }
 
-  // best-effort: replace space with T for Date parsing
   return tryParse(value.replace(' ', 'T'))
 }
 
-const statusFor = (endDate, expiringDays, now = new Date()) => {
-  if (!endDate) return 'expired'
-  const diffMs = endDate.getTime() - now.getTime()
-  if (diffMs <= 0) return 'expired'
-  if (diffMs <= expiringDays * 86_400_000) return 'expiring'
+const statusFromMarks = (marksRaw) => {
+  const marks = Array.isArray(marksRaw)
+    ? marksRaw
+    : safeJson(marksRaw, []).concat(
+        typeof marksRaw === 'string' && !Array.isArray(safeJson(marksRaw, [])) ? [marksRaw] : [],
+      )
+  const normalized = marks.map((m) => String(m).toLowerCase())
+  if (normalized.includes('expired') || normalized.includes('expierd')) return 'expired'
+  if (normalized.some((m) => !Number.isNaN(Number(m)))) return 'expiring'
   return 'active'
 }
 
@@ -111,7 +107,8 @@ const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
   const users = usersRaw.map((row) => {
     const plans = safeJson(row.subscription_plan, [])
     const endDate = parseEnd(row.subscription_end)
-    const status = statusFor(endDate, expiringDays)
+    const marks = safeJson(row.notified_marks, [])
+    const status = statusFromMarks(marks)
     const price = latestPaid[row.telegram_id]?.amount
     return {
       telegramId: row.telegram_id,
@@ -146,6 +143,7 @@ const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
     paidAt: row.paid_at,
     plan: row.plan,
     method: row.method,
+    walletAddress: row.wallet_address,
   }))
 
   return { users, payments, channels }

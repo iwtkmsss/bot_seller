@@ -37,24 +37,31 @@ export async function exportDb({ silent = false } = {}) {
 
   const now = Date.now()
   const usersRaw = execRows('SELECT * FROM users')
+  const statusFromMarks = (marksRaw) => {
+    const marks = Array.isArray(marksRaw)
+      ? marksRaw
+      : parseJson(marksRaw, []).concat(
+          typeof marksRaw === 'string' && !Array.isArray(parseJson(marksRaw, [])) ? [marksRaw] : [],
+        )
+    const normalized = marks.map((m) => String(m).toLowerCase())
+    if (normalized.includes('expired') || normalized.includes('expierd')) return 'expired'
+    if (normalized.some((m) => !Number.isNaN(Number(m)))) return 'expiring'
+    return 'active'
+  }
+
   const users = usersRaw.map((u) => {
     const plans = parseJson(u.subscription_plan, [])
-    const end = u.subscription_end
-    const endDate = end ? Date.parse(end.replace(' ', 'T')) : NaN
-    let status = 'expired'
-    if (!Number.isNaN(endDate)) {
-      const diff = endDate - now
-      status = diff <= 0 ? 'expired' : diff <= 7 * 86_400_000 ? 'expiring' : 'active'
-    }
+    const marks = parseJson(u.notified_marks, [])
+    const status = statusFromMarks(marks)
     return {
       telegramId: u.telegram_id,
       userName: u.user_name,
       firstName: u.first_name,
       plan: plans,
-      subscriptionEnd: end,
+      subscriptionEnd: u.subscription_end,
       status,
       jobTitle: u.job_title,
-      notifiedMark: u.notifed_mark,
+      notifiedMarks: marks,
       planPrice: 50,
     }
   })
@@ -72,7 +79,7 @@ export async function exportDb({ silent = false } = {}) {
 
   const channelRow = execRows("SELECT value FROM settings WHERE key='channel'")[0]
   const channelList = parseJson(channelRow?.value, [])
-  const eligibleUsers = users.filter((u) => (u.notifiedMark ?? '').toLowerCase() !== 'expierd')
+  const eligibleUsers = users.filter((u) => u.status !== 'expired')
   const channels = channelList.map((ch) => ({
     name: ch.name,
     members: eligibleUsers.filter((u) => Array.isArray(u.plan) && u.plan.includes(ch.name)).length,

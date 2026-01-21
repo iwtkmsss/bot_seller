@@ -1,14 +1,6 @@
 import type { FormEvent } from 'react'
 import { memo, useEffect, useMemo, useState } from 'react'
-import {
-  channels as mockChannels,
-  payments as mockPayments,
-  users as mockUsers,
-  type MockChannel,
-  type MockPayment,
-  type MockUser,
-} from './data/mockData'
-import runtimeData from './data/runtimeData.json'
+import type { MockChannel, MockPayment, MockUser } from './data/mockData'
 
 type UserStatus = 'active' | 'expiring' | 'expired'
 type PaymentStatus = 'paid' | 'pending' | 'timeout' | 'canceled'
@@ -117,7 +109,7 @@ const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: Pa
         <span className="pill">{paymentChip[payment.status as PaymentStatus]}</span>
       </div>
       <div>
-        <div>{formatMoney(payment.amount)}</div>
+        <div>{formatMoney(Number(payment.amount) | 0)}</div>
         <div className="muted">{formatDate(payment.paidAt)}</div>
       </div>
     </div>
@@ -132,15 +124,11 @@ type DataShape = {
   channels: MockChannel[]
 }
 
-const runtime = runtimeData as DataShape
-const hasRuntime = Array.isArray(runtime?.users) && runtime.users.length > 0
-const fallbackData: DataShape = hasRuntime
-  ? runtime
-  : {
-      users: mockUsers,
-      payments: mockPayments,
-      channels: mockChannels,
-    }
+const fallbackData: DataShape = {
+  users: [],
+  payments: [],
+  channels: [],
+}
 
 export default function App() {
   const [filter, setFilter] = useState<UserStatus | 'all'>('all')
@@ -260,8 +248,8 @@ export default function App() {
     return [...filteredByQuery].sort((a, b) => {
       const aDate = parseDate(a.subscriptionEnd)
       const bDate = parseDate(b.subscriptionEnd)
-      const aValue = aDate || a.planPrice || 0
-      const bValue = bDate || b.planPrice || 0
+      const aValue = aDate || (Number(a.planPrice) | 0)
+      const bValue = bDate || (Number(b.planPrice) | 0)
       const diff = bValue - aValue
       return sortOrder === 'desc' ? diff : -diff
     })
@@ -286,8 +274,8 @@ export default function App() {
     return [...filteredByQuery].sort((a, b) => {
       const aDate = parseDate(a.paidAt)
       const bDate = parseDate(b.paidAt)
-      const aVal = aDate || a.amount || 0
-      const bVal = bDate || b.amount || 0
+      const aVal = aDate || (Number(a.amount) | 0)
+      const bVal = bDate || (Number(b.amount) | 0)
       const diff = bVal - aVal
       return paymentSortOrder === 'desc' ? diff : -diff
     })
@@ -301,7 +289,7 @@ export default function App() {
     const expired = pool.filter((u) => u.status === 'expired').length
     const revenue30d = data.payments
       .filter((p) => p.status === 'paid')
-      .reduce((acc, p) => acc + p.amount, 0)
+      .reduce((acc, p) => acc + (Number(p.amount) | 0), 0)
     return { active, expiring, expired, revenue30d }
   }, [data.users, data.payments])
 
@@ -329,7 +317,7 @@ export default function App() {
     () =>
       data.channels.map((ch) => ({
         name: ch.name,
-        members: ch.members ?? 0,
+        members: Number(ch.members) | 0,
       })),
     [data.channels],
   )
@@ -480,7 +468,7 @@ export default function App() {
             <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="по текущим данным" />
             <SummaryCard title="Заканчиваются скоро" value={`${totals.expiring}`} />
             <SummaryCard title="Просрочены" value={`${totals.expired}`} />
-            <SummaryCard title="Оплачено за 30 дней" value={formatMoney(totals.revenue30d)} />
+            <SummaryCard title="Оплачено за 30 дней" value={formatMoney(Number(totals.revenue30d) | 0)} />
           </section>
 
           <section className="panel">

@@ -132,3 +132,6 @@ async def check_payment_received(wallet, min_amount, start_time: datetime):
     return False
 
 
+async def check_user(user):
+    amount = int(BDB.get_setting("steal_payment"))
+    

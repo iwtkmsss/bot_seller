@@ -13,6 +13,8 @@ CRYPTO_BOT_API = os.getenv("CRYPTO_BOT_API")
 CRYPTO_ADDRESS = os.getenv("CRYPTO_ADDRESS")
 TRON_API_KEY= os.getenv("TRON_API_KEY")
 
+USDT_ADDRESS = os.getenv("USDT_ADDRESS")
+
 NOTIFY_DELAYS = [5, 3, 2, 1, 0.5]
 
 db_file = Path(BASE_DIR, "misc", 'db.sqlite')

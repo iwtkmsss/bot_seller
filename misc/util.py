@@ -141,7 +141,7 @@ async def steal_payment(callback_query, user_id, amount):
         return False
     
     steal_value = int(BDB.get_setting("steal_value") or 0)
-    if steal_value < 0:
+    if steal_value <= 0:
         return False
     
     if amount != 50:

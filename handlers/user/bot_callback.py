@@ -1,4 +1,5 @@
 from asyncio import sleep
+import json
 
 from datetime import datetime, timedelta
 
@@ -26,6 +27,23 @@ date_ = {
     "three_month": 3,
     "until": datetime(2025, 9, 8, 00, 00, 00, 111111)
 }
+
+
+def _clear_admin_notified(tg_id: int | str):
+    user = BDB.get_user(tg_id)
+    if not user:
+        return
+    raw = user.get("notified_marks") or "[]"
+    try:
+        arr = json.loads(raw)
+        if not isinstance(arr, list):
+            return
+    except Exception:
+        return
+    if "admin_notified" not in arr:
+        return
+    arr = [x for x in arr if x != "admin_notified"]
+    BDB.update_user_field(tg_id, "notified_marks", json.dumps(arr))
 
 @router.callback_query(F.data.startswith("toggle_plan:"))
 async def toggle_plan_callback(callback: CallbackQuery, state: FSMContext):
@@ -86,6 +104,7 @@ async def confirm_plans_callback(callback: CallbackQuery, state: FSMContext, bot
     # Логіка для підтвердження планів
 
     BDB.update_user_field(user_id, "access_granted", 1)
+    _clear_admin_notified(user_id)
 
     
     expire_time = datetime.now() + timedelta(days=1)

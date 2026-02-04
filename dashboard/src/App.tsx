@@ -104,7 +104,10 @@ const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: Pa
         <div>{payment.plan || '—'}</div>
         <div className="muted">{payment.method}</div>
       </div>
-      <div className="muted">{maskWallet(payment.walletAddress)}</div>
+      <div>
+        <div className="muted">куда: {maskWallet(payment.walletAddress)}</div>
+        <div className="muted">откуда: {maskWallet(payment.walletFrom)}</div>
+      </div>
       <div>
         <span className="pill">{paymentChip[payment.status as PaymentStatus]}</span>
       </div>
@@ -116,7 +119,11 @@ const PaymentTableRow = memo(function PaymentTableRow({ payment }: { payment: Pa
   )
 })
 
-type PaymentItem = MockPayment & { telegramId?: number | string; walletAddress?: string | null }
+type PaymentItem = MockPayment & {
+  telegramId?: number | string
+  walletAddress?: string | null
+  walletFrom?: string | null
+}
 
 type DataShape = {
   users: MockUser[]
@@ -210,7 +217,8 @@ export default function App() {
         })
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
-        setLoadError(err instanceof Error ? err.message : 'Failed to load dashboard data')
+        console.warn('[dashboard] API unavailable, showing zeros', err)
+        setLoadError(null)
         setData(fallbackData)
       } finally {
         setLoading(false)

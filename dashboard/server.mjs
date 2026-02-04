@@ -48,27 +48,69 @@ const safeJson = (raw, fallback) => {
 
 const parseEnd = (raw) => {
   if (!raw) return null
-  const value = String(raw).replace('T', ' ')
+  const value = String(raw).replace('T', ' ').trim()
 
-  // basic parsing without heavy deps
-  const tryParse = (val) => {
-    const iso = new Date(val)
-    if (!Number.isNaN(iso.getTime())) return iso
-    return null
+  const parseYmd = (datePart, timePart) => {
+    const [year, month, day] = datePart.split('-').map(Number)
+    if (!year || !month || !day) return null
+    let hour = 0
+    let minute = 0
+    let second = 0
+    let ms = 0
+    if (timePart) {
+      const [hms, micros] = timePart.split('.')
+      const parts = hms.split(':').map(Number)
+      hour = parts[0] || 0
+      minute = parts[1] || 0
+      second = parts[2] || 0
+      if (micros) {
+        ms = Number(String(micros).padEnd(3, '0').slice(0, 3)) || 0
+      }
+    } else {
+      // date only => end of day
+      hour = 23
+      minute = 59
+    }
+    const dt = new Date(year, month - 1, day, hour, minute, second, ms)
+    return Number.isNaN(dt.getTime()) ? null : dt
   }
 
-  return tryParse(value.replace(' ', 'T'))
+  const parseDmy = (datePart, timePart) => {
+    const [day, month, year] = datePart.split('.').map(Number)
+    if (!year || !month || !day) return null
+    let hour = 0
+    let minute = 0
+    if (timePart) {
+      const parts = timePart.split(':').map(Number)
+      hour = parts[0] || 0
+      minute = parts[1] || 0
+    } else {
+      hour = 23
+      minute = 59
+    }
+    const dt = new Date(year, month - 1, day, hour, minute, 0, 0)
+    return Number.isNaN(dt.getTime()) ? null : dt
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [datePart, timePart] = value.split(' ')
+    return parseYmd(datePart, timePart)
+  }
+  if (/^\d{2}\.\d{2}\.\d{4}/.test(value)) {
+    const [datePart, timePart] = value.split(' ')
+    return parseDmy(datePart, timePart)
+  }
+
+  const iso = new Date(value)
+  if (!Number.isNaN(iso.getTime())) return iso
+  return null
 }
 
-const statusFromMarks = (marksRaw) => {
-  const marks = Array.isArray(marksRaw)
-    ? marksRaw
-    : safeJson(marksRaw, []).concat(
-        typeof marksRaw === 'string' && !Array.isArray(safeJson(marksRaw, [])) ? [marksRaw] : [],
-      )
-  const normalized = marks.map((m) => String(m).toLowerCase())
-  if (normalized.includes('expired') || normalized.includes('expierd')) return 'expired'
-  if (normalized.some((m) => !Number.isNaN(Number(m)))) return 'expiring'
+const statusFromSubscriptionEnd = (endDate, expiringDays, now) => {
+  if (!endDate) return 'expired'
+  const diffMs = endDate.getTime() - now.getTime()
+  if (diffMs <= 0) return 'expired'
+  if (diffMs <= expiringDays * 86400 * 1000) return 'expiring'
   return 'active'
 }
 
@@ -93,7 +135,7 @@ const latestPaidByUser = (paymentsRaw) => {
   return map
 }
 
-const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
+const buildSnapshot = ({ paymentsLimit, expiringDays, includeNonUser }) => {
   const hasUsers = tableExists('users')
   const hasPayments = tableExists('payments')
   const hasSettings = tableExists('settings')
@@ -104,12 +146,13 @@ const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
     : []
   const latestPaid = latestPaidByUser(paymentsRaw)
 
-  const users = usersRaw.map((row) => {
+  const now = new Date()
+  const usersAll = usersRaw.map((row) => {
     const plans = safeJson(row.subscription_plan, [])
     const endDate = parseEnd(row.subscription_end)
-    const marks = safeJson(row.notified_marks, [])
-    const status = statusFromMarks(marks)
+    const status = statusFromSubscriptionEnd(endDate, expiringDays, now)
     const price = latestPaid[row.telegram_id]?.amount
+    const jobTitle = row.job_title || 'user'
     return {
       telegramId: row.telegram_id,
       userName: row.user_name || '',
@@ -117,12 +160,24 @@ const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
       plan: Array.isArray(plans) ? plans : [],
       subscriptionEnd: endDate ? endDate.toISOString().replace('T', ' ').replace('Z', '') : null,
       status,
-      jobTitle: row.job_title || 'user',
+      jobTitle,
       planPrice: price,
     }
   })
 
-  const activeUsers = users.filter((u) => u.status !== 'expired')
+  const users = includeNonUser
+    ? usersAll
+    : usersAll.filter((u) => String(u.jobTitle).toLowerCase() === 'user')
+
+  const activeUsersAll = usersAll.filter((u) => u.status !== 'expired')
+  const stats = {
+    total: usersAll.length,
+    active: usersAll.filter((u) => u.status === 'active').length,
+    expiring: usersAll.filter((u) => u.status === 'expiring').length,
+    expired: usersAll.filter((u) => u.status === 'expired').length,
+    jobTitleUser: usersAll.filter((u) => String(u.jobTitle).toLowerCase() === 'user').length,
+    jobTitleNonUser: usersAll.filter((u) => String(u.jobTitle).toLowerCase() !== 'user').length,
+  }
 
   let channels = []
   if (hasSettings) {
@@ -130,7 +185,7 @@ const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
     const list = safeJson(row?.value, [])
     channels = list.map((ch) => ({
       name: ch.name,
-      members: activeUsers.filter((u) => Array.isArray(u.plan) && u.plan.includes(ch.name)).length,
+      members: activeUsersAll.filter((u) => Array.isArray(u.plan) && u.plan.includes(ch.name)).length,
     }))
   }
 
@@ -144,9 +199,10 @@ const buildSnapshot = ({ paymentsLimit, expiringDays }) => {
     plan: row.plan,
     method: row.method,
     walletAddress: row.wallet_address,
+    walletFrom: row.tx_from,
   }))
 
-  return { users, payments, channels }
+  return { users, payments, channels, stats }
 }
 
 const authGuard = (req, res, next) => {
@@ -173,7 +229,10 @@ app.get('/api/dashboard', authGuard, (req, res) => {
     1,
     90,
   )
-  const payload = buildSnapshot({ paymentsLimit, expiringDays })
+  const includeNonUser = ['1', 'true', 'yes'].includes(
+    String(req.query.include_non_user || '').toLowerCase(),
+  )
+  const payload = buildSnapshot({ paymentsLimit, expiringDays, includeNonUser })
   res.json(payload)
 })
 

@@ -561,6 +561,8 @@ class Database:
                     "paidAt": row.get("paid_at"),
                     "plan": row.get("plan"),
                     "method": row.get("method"),
+                    "walletAddress": row.get("wallet_address"),
+                    "walletFrom": row.get("tx_from"),
                 }
             )
 

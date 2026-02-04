@@ -169,7 +169,11 @@ const buildSnapshot = ({ paymentsLimit, expiringDays, includeNonUser }) => {
     ? usersAll
     : usersAll.filter((u) => String(u.jobTitle).toLowerCase() === 'user')
 
-  const activeUsersAll = usersAll.filter((u) => u.status !== 'expired')
+  const activeUsersAll = usersAll.filter((u) => {
+    const job = String(u.jobTitle || '').toLowerCase()
+    if (job && job !== 'user') return true
+    return u.status !== 'expired'
+  })
   const stats = {
     total: usersAll.length,
     active: usersAll.filter((u) => u.status === 'active').length,

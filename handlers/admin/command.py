@@ -22,6 +22,7 @@ async def cmd_admin(message: Message):
         "<code>/add_plan &lt;telegram_id&gt; &lt;назва_плану&gt;</code> - Додати користувачу план\n"
         "<code>/add_tp &lt;telegram_id&gt;</code> - Призначити користувачу посаду tp\n"
         "<code>/remove_tp &lt;telegram_id&gt;</code> - Видалити посаду tp у користувача\n"
+        "<code>/kick &lt;telegram_id&gt;</code> - Вигнати користувача з усіх каналів\n"
         "<code>/add_time &lt;telegram_id&gt; &lt;дата/тривалість&gt;</code>\n\n"
         "📌 Бот для получения ID канала: @username_to_id_bot"
     )
@@ -153,6 +154,98 @@ async def remove_tp_cmd(message: Message):
 
     BDB.update_user_field(telegram_id, "job_title", "user")
     await message.answer(f"🗑 Посаду користувача {telegram_id} видалено.", parse_mode="HTML")
+
+
+async def _kick_user_from_channels(bot: Bot, tg_id: int):
+    channels = BDB.get_channels()
+    kicked = 0
+    skipped_admin = 0
+    failed = 0
+    already_left = 0
+
+    for ch in channels:
+        channel_id = ch.get("id")
+        if channel_id is None:
+            continue
+        try:
+            member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
+            status = member.status
+            if status in ("left", "kicked"):
+                already_left += 1
+                continue
+            if status in ("administrator", "creator"):
+                skipped_admin += 1
+                continue
+            await bot.ban_chat_member(chat_id=channel_id, user_id=tg_id)
+            await bot.unban_chat_member(chat_id=channel_id, user_id=tg_id)
+            kicked += 1
+        except Exception:
+            failed += 1
+
+    all_cleared = failed == 0 and skipped_admin == 0
+    return {
+        "total": len(channels),
+        "kicked": kicked,
+        "skipped_admin": skipped_admin,
+        "failed": failed,
+        "already_left": already_left,
+        "all_cleared": all_cleared,
+    }
+
+
+@router.message(Command("kick"), UserAdmin())
+async def cmd_kick_user(message: Message, bot: Bot):
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "⚠️ Формат: <code>/kick &lt;telegram_id&gt;</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    raw_id = parts[1].strip()
+    try:
+        telegram_id = int(raw_id)
+    except ValueError:
+        await message.answer("❌ Telegram ID має бути числом.")
+        return
+
+    if not BDB.get_channels():
+        await message.answer("⚠️ Немає доданих каналів.")
+        return
+
+    result = await _kick_user_from_channels(bot, telegram_id)
+
+    user = BDB.get_user(telegram_id)
+    if result["all_cleared"] and user:
+        BDB.update_user_field(telegram_id, "access_granted", 0)
+        BDB.update_user_field(telegram_id, "notified_marks", "[]")
+        try:
+            await bot.send_message(chat_id=telegram_id, text=get_text("KICK"))
+        except Exception:
+            pass
+
+    summary = (
+        f"Канали: {result['total']}\n"
+        f"Вигнано: {result['kicked']}\n"
+        f"Вже вийшов: {result['already_left']}\n"
+        f"Адмін/власник: {result['skipped_admin']}\n"
+        f"Помилки: {result['failed']}"
+    )
+
+    if result["all_cleared"] and user:
+        await message.answer(f"✅ Кік виконано.\n\n{summary}")
+        return
+
+    if not user:
+        await message.answer(
+            f"⚠️ Користувача немає в БД, але спробу виконано.\n\n{summary}"
+        )
+        return
+
+    await message.answer(
+        f"⚠️ Не всі канали очищені (адмін/помилки). Дані користувача в БД не змінено.\n\n{summary}"
+    )
 
 
 def _parse_until(arg: str) -> datetime | None:

@@ -7,7 +7,7 @@ type PaymentStatus = 'paid' | 'pending' | 'timeout' | 'canceled'
 type TabId = 'overview' | 'stats' | 'payments'
 type SortOrder = 'asc' | 'desc'
 type SearchKey = 'userName' | 'telegramId' | 'plan'
-type PaymentSearchKey = 'userName' | 'telegramId' | 'plan' | 'method'
+type PaymentSearchKey = 'userName' | 'telegramId' | 'plan' | 'method' | 'walletAddress' | 'walletFrom'
 type AuthState = {
   authed: boolean
   attemptsLeft: number
@@ -309,6 +309,8 @@ export default function App() {
             if (paymentSearchKey === 'telegramId') return `${p.telegramId ?? ''}`.startsWith(q)
             if (paymentSearchKey === 'plan') return (p.plan || '').toLowerCase().includes(q)
             if (paymentSearchKey === 'method') return (p.method || '').toLowerCase().includes(q)
+            if (paymentSearchKey === 'walletAddress') return (p.walletAddress || '').toLowerCase().includes(q)
+            if (paymentSearchKey === 'walletFrom') return (p.walletFrom || '').toLowerCase().includes(q)
             return (p.userName || '').toLowerCase().includes(q)
           })
     const parseDate = (val?: string) => (val ? Date.parse(val.replace(' ', 'T')) : 0)
@@ -630,6 +632,8 @@ export default function App() {
                 <option value="telegramId">Telegram ID</option>
                 <option value="plan">План</option>
                 <option value="method">Метод</option>
+                <option value="walletAddress">Кошелек (куда)</option>
+                <option value="walletFrom">Кошелек (откуда)</option>
               </select>
               <input
                 className="input"

@@ -291,6 +291,13 @@ h2 {
   color: #8ad3ff;
 }
 
+.channel-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  font-size: 12px;
+}
+
 .panel-block {
   background: rgba(255, 255, 255, 0.01);
   border: 1px solid rgba(255, 255, 255, 0.04);

@@ -21,7 +21,12 @@ export type MockPayment = {
 
 export type MockChannel = {
   name: string
-  members: number
+  members?: number
+  planTotal?: number
+  planActive?: number
+  planActiveStrict?: number
+  planExpiring?: number
+  planExpired?: number
 }
 
 export const users: MockUser[] = [
@@ -162,10 +167,58 @@ export const payments: MockPayment[] = [
 ]
 
 export const channels: MockChannel[] = [
-  { name: '«REFUNDER» TEAM NEWS', members: 42 },
-  { name: 'QUICK HUSTLE', members: 38 },
-  { name: 'STRONG HUSTLE', members: 32 },
-  { name: 'PRIME HUSTLE', members: 18 },
-  { name: 'DNA TEAM TEST', members: 6 },
-  { name: 'Резервний', members: 4 },
+  {
+    name: '«REFUNDER» TEAM NEWS',
+    members: 42,
+    planTotal: 48,
+    planActive: 42,
+    planActiveStrict: 30,
+    planExpiring: 12,
+    planExpired: 6,
+  },
+  {
+    name: 'QUICK HUSTLE',
+    members: 38,
+    planTotal: 46,
+    planActive: 38,
+    planActiveStrict: 28,
+    planExpiring: 10,
+    planExpired: 8,
+  },
+  {
+    name: 'STRONG HUSTLE',
+    members: 32,
+    planTotal: 38,
+    planActive: 32,
+    planActiveStrict: 24,
+    planExpiring: 8,
+    planExpired: 6,
+  },
+  {
+    name: 'PRIME HUSTLE',
+    members: 18,
+    planTotal: 22,
+    planActive: 18,
+    planActiveStrict: 14,
+    planExpiring: 4,
+    planExpired: 4,
+  },
+  {
+    name: 'DNA TEAM TEST',
+    members: 6,
+    planTotal: 9,
+    planActive: 6,
+    planActiveStrict: 4,
+    planExpiring: 2,
+    planExpired: 3,
+  },
+  {
+    name: 'Резервний',
+    members: 4,
+    planTotal: 5,
+    planActive: 4,
+    planActiveStrict: 3,
+    planExpiring: 1,
+    planExpired: 1,
+  },
 ]

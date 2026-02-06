@@ -57,6 +57,23 @@ function formatMoney(value: number) {
   return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value)
 }
 
+function toInt(value: unknown, fallback = 0) {
+  const num = Number(value)
+  if (Number.isFinite(num)) return Math.trunc(num)
+  return fallback
+}
+
+function toPositiveInt(value: unknown, fallback = 0) {
+  return Math.max(0, toInt(value, fallback))
+}
+
+function parseDateValue(value?: string) {
+  if (!value) return null
+  const ms = Date.parse(value.replace(' ', 'T'))
+  if (Number.isNaN(ms)) return null
+  return new Date(ms)
+}
+
 function SummaryCard({ title, value, sub }: { title: string; value: string; sub?: string }) {
   return (
     <div className="card summary-card">
@@ -129,12 +146,27 @@ type DataShape = {
   users: MockUser[]
   payments: PaymentItem[]
   channels: MockChannel[]
+  stats?: {
+    revenueMonth?: number
+  }
+}
+
+type ChannelStats = {
+  name: string
+  members: number
+  planTotal: number
+  planActive: number
+  planActiveStrict: number
+  planExpiring: number
+  planExpired: number
+  hasBreakdown: boolean
 }
 
 const fallbackData: DataShape = {
   users: [],
   payments: [],
   channels: [],
+  stats: undefined,
 }
 
 export default function App() {
@@ -214,6 +246,7 @@ export default function App() {
           users: payload.users,
           payments: payload.payments,
           channels: payload.channels,
+          stats: typeof payload.stats === 'object' && payload.stats !== null ? payload.stats : undefined,
         })
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
@@ -295,11 +328,21 @@ export default function App() {
     const active = pool.filter((u) => u.status === 'active' || u.status === 'expiring').length
     const expiring = pool.filter((u) => u.status === 'expiring').length
     const expired = pool.filter((u) => u.status === 'expired').length
-    const revenue30d = data.payments
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const revenueMonthFallback = data.payments
       .filter((p) => p.status === 'paid')
-      .reduce((acc, p) => acc + (Number(p.amount) | 0), 0)
-    return { active, expiring, expired, revenue30d }
-  }, [data.users, data.payments])
+      .reduce((acc, p) => {
+        const paidAt = parseDateValue(p.paidAt)
+        if (!paidAt || paidAt < monthStart || paidAt >= monthEnd) return acc
+        return acc + (Number(p.amount) | 0)
+      }, 0)
+    const revenueFromServer = Number(data.stats?.revenueMonth)
+    const hasServerRevenue = Number.isFinite(revenueFromServer)
+    const revenueMonth = hasServerRevenue ? revenueFromServer : revenueMonthFallback
+    return { active, expiring, expired, revenueMonth }
+  }, [data.users, data.payments, data.stats])
 
   const totalPages = Math.max(1, Math.ceil(visibleUsers.length / PAGE_SIZE))
   const paginatedUsers = useMemo(() => {
@@ -321,12 +364,38 @@ export default function App() {
     setPaymentPage((p) => Math.min(p, paymentTotalPages))
   }, [paymentTotalPages])
 
-  const channelStats = useMemo(
+  const channelStats = useMemo<ChannelStats[]>(
     () =>
-      data.channels.map((ch) => ({
-        name: ch.name,
-        members: Number(ch.members) | 0,
-      })),
+      data.channels.map((ch) => {
+        const members = toPositiveInt(ch.members)
+        const hasBreakdown = [
+          ch.planTotal,
+          ch.planActive,
+          ch.planActiveStrict,
+          ch.planExpiring,
+          ch.planExpired,
+        ].some((value) => value !== undefined && value !== null)
+        const planTotal = toPositiveInt(ch.planTotal ?? members)
+        const planActive = toPositiveInt(ch.planActive ?? members)
+        const planActiveStrict = toPositiveInt(ch.planActiveStrict ?? planActive ?? members)
+        const planExpiring = toPositiveInt(
+          ch.planExpiring ??
+            (hasBreakdown ? Math.max(0, planActive - planActiveStrict) : 0),
+        )
+        const planExpired = toPositiveInt(
+          ch.planExpired ?? (hasBreakdown ? Math.max(0, planTotal - planActive) : 0),
+        )
+        return {
+          name: ch.name,
+          members,
+          planTotal,
+          planActive,
+          planActiveStrict,
+          planExpiring,
+          planExpired,
+          hasBreakdown,
+        }
+      }),
     [data.channels],
   )
 
@@ -476,7 +545,7 @@ export default function App() {
             <SummaryCard title="Активные подписки" value={`${totals.active}`} sub="по текущим данным" />
             <SummaryCard title="Заканчиваются скоро" value={`${totals.expiring}`} />
             <SummaryCard title="Просрочены" value={`${totals.expired}`} />
-            <SummaryCard title="Оплачено за 30 дней" value={formatMoney(Number(totals.revenue30d) | 0)} />
+            <SummaryCard title="Оплачено за месяц" value={formatMoney(Number(totals.revenueMonth) | 0)} />
           </section>
 
           <section className="panel">
@@ -489,8 +558,18 @@ export default function App() {
               {channelStats.map((ch) => (
                 <div key={ch.name} className="card channel-card">
                   <div className="channel-title">{ch.name}</div>
-                  <div className="channel-count">{ch.members}</div>
-                  <div className="channel-meta muted">участников</div>
+                  <div className="channel-count">{ch.hasBreakdown ? ch.planActive : ch.members}</div>
+                  <div className="channel-meta muted">
+                    {ch.hasBreakdown ? 'активных' : 'участников'}
+                  </div>
+                  {ch.hasBreakdown && (
+                    <div className="channel-breakdown muted">
+                      <span>Активные: {ch.planActiveStrict}</span>
+                      <span>На подходе: {ch.planExpiring}</span>
+                      <span>Истекло: {ch.planExpired}</span>
+                      <span>Всего: {ch.planTotal}</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

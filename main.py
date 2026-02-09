@@ -4,6 +4,7 @@ import logging
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from logging.handlers import TimedRotatingFileHandler
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -32,13 +33,21 @@ def setup_logging():
     log_dir = Path(__file__).resolve().parent / "misc" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "bot.log"
+    log_retention_days = 7
 
     formatter = PrefixFormatter("%(asctime)s %(prefix)s %(name)s: %(message)s")
 
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
 
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler = TimedRotatingFileHandler(
+        log_file,
+        when="midnight",
+        interval=1,
+        backupCount=log_retention_days,
+        encoding="utf-8",
+    )
+    file_handler.suffix = "%Y-%m-%d"
     file_handler.setFormatter(formatter)
 
     root = logging.getLogger()

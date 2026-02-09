@@ -8,7 +8,8 @@ from aiogram.types import Message, ChatMemberAdministrator, ChatMemberOwner
 from aiogram.filters import Command, CommandObject
 
 from filter import UserAdmin
-from misc import BDB, get_text, normalize_subscription_end
+from misc import BDB, get_text, normalize_subscription_end, get_channel_id_from_list
+from keyboards import start_buttons_kb
 
 router = Router()
 
@@ -23,6 +24,7 @@ async def cmd_admin(message: Message):
         "<code>/add_tp &lt;telegram_id&gt;</code> - Призначити користувачу посаду tp\n"
         "<code>/remove_tp &lt;telegram_id&gt;</code> - Видалити посаду tp у користувача\n"
         "<code>/kick &lt;telegram_id&gt;</code> - Вигнати користувача з усіх каналів\n"
+        "<code>/restore &lt;telegram_id&gt;</code> - Відновити доступ користувачу\n"
         "<code>/add_time &lt;telegram_id&gt; &lt;дата/тривалість&gt;</code>\n\n"
         "📌 Бот для получения ID канала: @username_to_id_bot"
     )
@@ -252,6 +254,74 @@ async def cmd_kick_user(message: Message, bot: Bot):
     await message.answer(
         f"⚠️ Не всі канали очищені (адмін/помилки). Дані користувача в БД не змінено.\n\n{summary}"
     )
+
+
+@router.message(Command("restore"), UserAdmin())
+async def cmd_restore_user(message: Message, bot: Bot):
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "⚠️ Формат: <code>/restore &lt;telegram_id&gt;</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    raw_id = parts[1].strip()
+    try:
+        telegram_id = int(raw_id)
+    except ValueError:
+        await message.answer("❌ Telegram ID має бути числом.")
+        return
+
+    user = BDB.get_user(telegram_id)
+    if not user:
+        await message.answer("❌ Користувача не знайдено.")
+        return
+
+    plans = BDB.get_user_plans(telegram_id)
+    if not plans:
+        await message.answer("⚠️ У користувача немає планів. Спочатку додай план через /add_plan.")
+        return
+
+    expire_time = datetime.now() + timedelta(days=1)
+    invite_links = []
+    missing = []
+    for index, plan in enumerate(plans, start=1):
+        channel_id = get_channel_id_from_list(plan)
+        if not channel_id:
+            missing.append(plan)
+            continue
+        try:
+            invite_link = await bot.create_chat_invite_link(
+                chat_id=channel_id,
+                member_limit=1,
+                expire_date=expire_time,
+            )
+            invite_links.append(f"{index} ????????? - <a href='{invite_link.invite_link}'>{plan}</a>")
+        except Exception:
+            missing.append(plan)
+
+    if not invite_links:
+        await message.answer("⚠️ Не вдалося створити посилання для планів.")
+        return
+
+    new_end = datetime.now() + timedelta(days=5)
+    BDB.update_user_field(telegram_id, "subscription_end", normalize_subscription_end(new_end))
+    BDB.update_user_field(telegram_id, "access_granted", 1)
+    BDB.update_user_field(telegram_id, "notified_marks", "[]")
+
+    await bot.send_message(
+        chat_id=telegram_id,
+        text=get_text("ACCESS_IS_AVAILABLE").format(links="\n".join(invite_links)),
+        reply_markup=start_buttons_kb,
+    )
+
+    if missing:
+        await message.answer(
+            f"✅ Доступ відновлено. Але не знайдено канали для планів: {', '.join(missing)}"
+        )
+    else:
+        await message.answer("✅ Доступ відновлено.")
 
 
 def _parse_until(arg: str) -> datetime | None:

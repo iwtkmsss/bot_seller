@@ -44,7 +44,13 @@ async def cmd_add_channel(message: Message, bot: Bot):
 
     try:
         member = await bot.get_chat_member(chat_id=channel_id, user_id=bot.id)
-        if not isinstance(member, (ChatMemberAdministrator, ChatMemberOwner)):
+        if isinstance(member, ChatMemberOwner):
+            pass
+        elif isinstance(member, ChatMemberAdministrator):
+            if not getattr(member, "can_restrict_members", False):
+                await message.answer("❌ У мене немає права обмежувати учасників (can_restrict_members). Видай це право і спробуй ще раз.")
+                return
+        else:
             await message.answer("❌ Я не адмін у цьому каналі. Додай мене як адміна і спробуй знову.")
             return
     except TelegramBadRequest:

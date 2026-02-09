@@ -1,17 +1,10 @@
-
 import asyncio
 import json
 import logging
-<<<<<<< HEAD
-from datetime import datetime
-from pathlib import Path
-=======
 from datetime import datetime, timedelta
->>>>>>> 1b2b21d (all bug fix + add log")
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties
 
 from keyboards import payment_kb
 from misc import BDB, get_text, normalize_subscription_end
@@ -32,21 +25,7 @@ STAGES = [
 
 CHECK_INTERVAL_SECONDS = 60
 
-<<<<<<< HEAD
-LOG_PATH = Path("misc") / "logs" / "kick.log"
-LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-_kick_logger = logging.getLogger("kick_logger")
-if not _kick_logger.handlers:
-    _kick_logger.setLevel(logging.INFO)
-    _handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
-    _handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
-    _kick_logger.addHandler(_handler)
-
-
-def _parse_dt_kyiv(s: str) -> datetime | None:
-=======
 def _parse_dt_kyiv(s: str | datetime) -> datetime | None:
->>>>>>> 1b2b21d (all bug fix + add log")
     """
     Парсимо datetime зі строк БД як локальний КИЇВСЬКИЙ час (aware, Europe/Kyiv).
     Підтримуємо:
@@ -114,8 +93,6 @@ def _load_marks(user: dict) -> set[str]:
 def _save_marks(tg_id: int | str, marks: set[str]):
     BDB.update_user_field(tg_id, "notified_marks", json.dumps(sorted(list(marks), key=lambda x: (x=="expired", x))))
 
-<<<<<<< HEAD
-=======
 def _rollback_subscription(user: dict, *, days: int = 5, reason: str = "") -> None:
     tg_id = user.get("telegram_id")
     now = datetime.now(KYIV)
@@ -140,7 +117,6 @@ def _rollback_subscription(user: dict, *, days: int = 5, reason: str = "") -> No
         reason or "kick_failed",
     )
 
->>>>>>> 1b2b21d (all bug fix + add log")
 async def _send_stage_message(bot: Bot, user: dict, stage_key: str, mark: str) -> bool:
     tg_id = user["telegram_id"]
     try:
@@ -151,44 +127,14 @@ async def _send_stage_message(bot: Bot, user: dict, stage_key: str, mark: str) -
     if mark == "expired":
         text = get_text(stage_key)
         channels = BDB.get_channels()
-<<<<<<< HEAD
-        all_channels_cleared = True
-=======
         kick_ok = True
         if not channels:
             logger.warning("No channels configured to kick user %s", tg_id)
->>>>>>> 1b2b21d (all bug fix + add log")
         for ch in channels:
             channel_id = ch["id"]
             try:
-                member = await bot.get_chat_member(chat_id=channel_id, user_id=tg_id)
-                status = member.status
-                if status in ("left", "kicked"):
-                    continue
-                if status in ("administrator", "creator"):
-                    all_channels_cleared = False
-                    print(f"✗ Неможливо вигнати {tg_id} з {channel_id}: user is admin/owner")
-                    _kick_logger.warning(f"cannot_kick_admin_or_owner tg_id={tg_id} channel_id={channel_id}")
-                    continue
                 await bot.ban_chat_member(chat_id=channel_id, user_id=tg_id)
                 await bot.unban_chat_member(chat_id=channel_id, user_id=tg_id)
-<<<<<<< HEAD
-                _kick_logger.info(f"kick_success tg_id={tg_id} channel_id={channel_id}")
-            except Exception as e:
-                all_channels_cleared = False
-                print(f"✗ Не вдалося вигнати {tg_id} з {channel_id}: {e}")
-                _kick_logger.error(f"kick_failed tg_id={tg_id} channel_id={channel_id} error={e}")
-        if all_channels_cleared:
-            BDB.update_user_field(tg_id, "access_granted", 0)
-            BDB.update_user_field(tg_id, "notified_marks", "[]")
-            _kick_logger.info(f"kick_user_cleared tg_id={tg_id}")
-            try:
-                await bot.send_message(chat_id=tg_id, text=text)
-            except Exception as e:
-                print(f"✗ Не вдалося надіслати повідомлення {tg_id}: {e}")
-                _kick_logger.error(f"notify_failed tg_id={tg_id} error={e}")
-        return all_channels_cleared
-=======
                 logger.info("Kick success: user=%s channel=%s", tg_id, channel_id)
             except Exception as e:
                 kick_ok = False
@@ -199,7 +145,6 @@ async def _send_stage_message(bot: Bot, user: dict, stage_key: str, mark: str) -
         except Exception as e:
             logger.error("Kick message failed: user=%s error=%s", tg_id, e)
         return kick_ok
->>>>>>> 1b2b21d (all bug fix + add log")
 
     try:
         text = get_text(stage_key).format(name=user_name)
@@ -209,38 +154,21 @@ async def _send_stage_message(bot: Bot, user: dict, stage_key: str, mark: str) -
         await bot.send_message(chat_id=tg_id, text=text, reply_markup=payment_kb)
         logger.info("Warning sent: user=%s mark=%s", tg_id, mark)
     except Exception as e:
-<<<<<<< HEAD
-        print(f"✗ Не вдалося надіслати попередження {tg_id} ({mark}): {e}")
-        _kick_logger.error(f"warning_send_failed tg_id={tg_id} mark={mark} error={e}")
-=======
         logger.error("Warning send failed: user=%s mark=%s error=%s", tg_id, mark, e)
->>>>>>> 1b2b21d (all bug fix + add log")
     return True
 
 async def send_warning_once(bot: Bot, user: dict, days_left: float):
     marks = _load_marks(user)
     for stage_days, stage_key, mark in STAGES:
-<<<<<<< HEAD
-        if days_left <= stage_days:
-            if mark == "expired":
-                await _send_stage_message(bot, user, stage_key, mark)
-                break
-            if mark in marks:
-                break
-=======
         if days_left <= stage_days and (mark not in marks):
->>>>>>> 1b2b21d (all bug fix + add log")
             should_mark = await _send_stage_message(bot, user, stage_key, mark)
             if should_mark:
                 marks.add(mark)
                 _save_marks(user["telegram_id"], marks)
-<<<<<<< HEAD
-=======
             else:
                 logger.warning("Skip marking expired for user=%s due to kick failure", user["telegram_id"])
                 if mark == "expired":
                     _rollback_subscription(user, days=5, reason="kick_failed")
->>>>>>> 1b2b21d (all bug fix + add log")
             break
 
 async def reminder_payment(bot: Bot):
@@ -259,17 +187,11 @@ async def reminder_payment(bot: Bot):
 
             try:
                 await send_warning_once(bot, user, days_left)
-<<<<<<< HEAD
-            except Exception as e:
-                print(f"❌ Помилка при обробці користувача {user.get('telegram_id')}: {e}")
-                _kick_logger.error(f"reminder_processing_failed tg_id={user.get('telegram_id')} error={e}")
-=======
             except Exception:
                 logger.exception(
                     "Error processing user: %s",
                     user.get("telegram_id"),
                 )
->>>>>>> 1b2b21d (all bug fix + add log")
 
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
@@ -304,8 +226,6 @@ async def kick_expired_once(bot: Bot):
         try:
             ok = await _send_stage_message(bot, user, "KICK", "expired")
             if ok:
-                marks.add("expired")
-                _save_marks(user["telegram_id"], marks)
                 kicked += 1
             else:
                 _rollback_subscription(user, days=5, reason="startup_kick_failed")

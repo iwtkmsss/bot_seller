@@ -297,7 +297,7 @@ async def cmd_restore_user(message: Message, bot: Bot):
                 member_limit=1,
                 expire_date=expire_time,
             )
-            invite_links.append(f"{index} ????????? - <a href='{invite_link.invite_link}'>{plan}</a>")
+            invite_links.append(f"{index} посилання - <a href='{invite_link.invite_link}'>{plan}</a>")
         except Exception:
             missing.append(plan)
 

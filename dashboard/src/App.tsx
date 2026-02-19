@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import { memo, useEffect, useMemo, useState } from 'react'
+import * as XLSX from 'xlsx'
 import type { MockChannel, MockPayment, MockUser } from './data/mockData'
 
 type UserStatus = 'active' | 'expiring' | 'expired'
@@ -72,6 +73,33 @@ function parseDateValue(value?: string) {
   const ms = Date.parse(value.replace(' ', 'T'))
   if (Number.isNaN(ms)) return null
   return new Date(ms)
+}
+
+function exportUsersToExcel(users: MockUser[]) {
+  const rows = users.map((u) => ({
+    telegram_id: u.telegramId,
+    user_name: u.userName || '',
+    first_name: u.firstName || '',
+    plan: u.plan.join(', '),
+    status: statusChip[u.status],
+    subscription_end: u.subscriptionEnd ? formatDate(u.subscriptionEnd) : '-',
+    last_paid_usd: Number(u.planPrice ?? 0) | 0,
+  }))
+
+  const sheet = XLSX.utils.json_to_sheet(rows)
+  sheet['!cols'] = [
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 45 },
+    { wch: 24 },
+    { wch: 28 },
+    { wch: 14 },
+  ]
+  const book = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(book, sheet, 'users')
+  const day = new Date().toISOString().slice(0, 10)
+  XLSX.writeFile(book, `dashboard_users_${day}.xlsx`)
 }
 
 function SummaryCard({ title, value, sub }: { title: string; value: string; sub?: string }) {
@@ -441,6 +469,10 @@ export default function App() {
     setLoading(false)
   }
 
+  const handleExportUsers = () => {
+    exportUsersToExcel(visibleUsers)
+  }
+
   const pageButtons = useMemo(() => {
     const targets = [1, page - 10, page - 5, page, page + 5, page + 10, totalPages]
     return Array.from(
@@ -692,6 +724,9 @@ export default function App() {
             <div>
               <h2>Пользователи</h2>
             </div>
+            <button className="btn ghost" onClick={handleExportUsers} disabled={visibleUsers.length === 0}>
+              Выгрузить в Excel
+            </button>
           </div>
 
           <div className="controls">

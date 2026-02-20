@@ -1,6 +1,7 @@
 import json
+import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Router, Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -12,6 +13,7 @@ from misc import BDB, get_text, normalize_subscription_end, get_channel_id_from_
 from keyboards import start_buttons_kb
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 @router.message(Command("admin"), UserAdmin())
 async def cmd_admin(message: Message):
@@ -278,19 +280,41 @@ async def cmd_restore_user(message: Message, bot: Bot):
         await message.answer("❌ Користувача не знайдено.")
         return
 
-    plans = BDB.get_user_plans(telegram_id)
+    plans = list(dict.fromkeys(BDB.get_user_plans(telegram_id)))
     if not plans:
         await message.answer("⚠️ У користувача немає планів. Спочатку додай план через /add_plan.")
         return
 
-    expire_time = datetime.now() + timedelta(days=1)
+    expire_time = datetime.now(timezone.utc) + timedelta(days=1)
     invite_links = []
     missing = []
+    unban_failed = []
+    link_failed = []
     for index, plan in enumerate(plans, start=1):
         channel_id = get_channel_id_from_list(plan)
         if not channel_id:
             missing.append(plan)
             continue
+
+        # Якщо користувач залишився в "kicked" після попереднього бану,
+        # Telegram часто показує запрошення як невалідне/прострочене.
+        # Знімаємо бан перед генерацією нового посилання.
+        try:
+            await bot.unban_chat_member(
+                chat_id=channel_id,
+                user_id=telegram_id,
+                only_if_banned=True,
+            )
+        except Exception as e:
+            unban_failed.append(plan)
+            logger.warning(
+                "Restore: unban failed user=%s channel=%s plan=%s error=%s",
+                telegram_id,
+                channel_id,
+                plan,
+                e,
+            )
+
         try:
             invite_link = await bot.create_chat_invite_link(
                 chat_id=channel_id,
@@ -298,11 +322,26 @@ async def cmd_restore_user(message: Message, bot: Bot):
                 expire_date=expire_time,
             )
             invite_links.append(f"{index} посилання - <a href='{invite_link.invite_link}'>{plan}</a>")
-        except Exception:
-            missing.append(plan)
+        except Exception as e:
+            link_failed.append(plan)
+            logger.warning(
+                "Restore: invite failed user=%s channel=%s plan=%s error=%s",
+                telegram_id,
+                channel_id,
+                plan,
+                e,
+            )
 
     if not invite_links:
-        await message.answer("⚠️ Не вдалося створити посилання для планів.")
+        details = []
+        if missing:
+            details.append(f"немає каналу для: {', '.join(missing)}")
+        if unban_failed:
+            details.append(f"не знято бан: {', '.join(unban_failed)}")
+        if link_failed:
+            details.append(f"не створено лінк: {', '.join(link_failed)}")
+        suffix = f"\n\nДеталі: {'; '.join(details)}" if details else ""
+        await message.answer(f"⚠️ Не вдалося створити посилання для планів.{suffix}")
         return
 
     new_end = datetime.now() + timedelta(days=5)
@@ -316,12 +355,18 @@ async def cmd_restore_user(message: Message, bot: Bot):
         reply_markup=start_buttons_kb,
     )
 
+    details = []
     if missing:
-        await message.answer(
-            f"✅ Доступ відновлено. Але не знайдено канали для планів: {', '.join(missing)}"
-        )
-    else:
-        await message.answer("✅ Доступ відновлено.")
+        details.append(f"не знайдено канал для планів: {', '.join(missing)}")
+    if unban_failed:
+        details.append(f"не вдалося зняти бан: {', '.join(unban_failed)}")
+    if link_failed:
+        details.append(f"не вдалося створити лінки: {', '.join(link_failed)}")
+
+    if details:
+        await message.answer(f"✅ Доступ відновлено частково.\n\nДеталі: {'; '.join(details)}")
+        return
+    await message.answer("✅ Доступ відновлено.")
 
 
 def _parse_until(arg: str) -> datetime | None:
